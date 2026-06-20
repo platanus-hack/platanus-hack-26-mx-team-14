@@ -1,0 +1,78 @@
+services:
+  redis:
+    container_name: sat-redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+      - ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: >
+      sh -c 'redis-server /usr/local/etc/redis/redis.conf --requirepass "$${REDIS_PASSWORD}"'
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "$$REDIS_PASSWORD", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    container_name: sat-api
+    image: ghcr.io/eduardovarela0144/sat-api:latest
+    ports:
+      - "0.0.0.0:3000:3000"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3000
+      - POSTGRES_CONNECTION_STRING=${POSTGRES_CONNECTION_STRING}
+      - REDIS_HOST=sat-redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - WEB_ORIGIN=${WEB_ORIGIN}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID}
+      - VOICE_PROVIDER=${VOICE_PROVIDER}
+      - VAPI_API_KEY=${VAPI_API_KEY}
+      - VAPI_WEBHOOK_SECRET=${VAPI_WEBHOOK_SECRET}
+      - DEMO_USER_ID=${DEMO_USER_ID}
+      - DEMO_CREDENTIAL_ID=${DEMO_CREDENTIAL_ID}
+      - DEMO_RFC=${DEMO_RFC}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    container_name: sat-worker
+    image: ghcr.io/eduardovarela0144/sat-worker:latest
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - POSTGRES_CONNECTION_STRING=${POSTGRES_CONNECTION_STRING}
+      - REDIS_HOST=sat-redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - SAT_DRIVER=playwright
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    shm_size: 256MB
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis_data:
+    driver: local

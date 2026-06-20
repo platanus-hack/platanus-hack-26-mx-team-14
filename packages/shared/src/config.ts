@@ -65,7 +65,7 @@ export interface Env extends Raw {
   /** Resolved API port (PORT ?? API_PORT ?? 3000). */
   apiPort: number;
   /** ioredis connection options (works for BullMQ + plain clients). */
-  redis: { host: string; port: number; password?: string };
+  redis: { host: string; port: number; password?: string; tls?: object };
 }
 
 let cached: Env | null = null;
@@ -89,7 +89,12 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const raw = parsed.data;
 
   // Prefer explicit host/port/password; if only REDIS_URL is given, parse it.
-  let redis = { host: raw.REDIS_HOST, port: raw.REDIS_PORT, password: raw.REDIS_PASSWORD };
+  let redis: { host: string; port: number; password?: string; tls?: object } = {
+    host: raw.REDIS_HOST,
+    port: raw.REDIS_PORT,
+    password: raw.REDIS_PASSWORD,
+    tls: raw.REDIS_HOST !== "localhost" && raw.REDIS_HOST !== "sat-redis" ? {} : undefined,
+  };
   if (raw.REDIS_URL && source.REDIS_HOST === undefined) {
     try {
       const u = new URL(raw.REDIS_URL);
@@ -97,6 +102,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
         host: u.hostname,
         port: u.port ? Number(u.port) : 6379,
         password: u.password || undefined,
+        tls: u.protocol === "rediss:" ? {} : undefined,
       };
     } catch {
       /* keep host/port defaults */
