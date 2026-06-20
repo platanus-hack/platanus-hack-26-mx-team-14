@@ -45,7 +45,7 @@ export default function CsfCard({ csf }: CsfCardProps) {
     <motion.div
       {...fade}
       transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-      className="w-full max-w-2xl mx-auto grid gap-4"
+      className="w-full grid gap-4"
       role="region"
       aria-label="Constancia de Situación Fiscal"
     >
