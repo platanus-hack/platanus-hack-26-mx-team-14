@@ -74,9 +74,16 @@ export async function solveCaptcha(
   const log = childLogger({ correlationId: ctx.correlationId, op: "captcha" });
 
   const views = await variants(image);
-  const reads = (await Promise.all(views.map((v) => readOne(v).catch(() => "")))).filter(
-    (r) => r.length >= 4 && r.length <= 8,
-  );
+  const reads = (
+    await Promise.all(
+      views.map((v) =>
+        readOne(v).catch((err) => {
+          console.error("Captcha read error:", err?.message ?? err);
+          return "";
+        }),
+      ),
+    )
+  ).filter((r) => r.length >= 4 && r.length <= 8);
 
   if (reads.length === 0) throw new Error("captcha: every read was empty/invalid");
 

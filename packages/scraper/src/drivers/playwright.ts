@@ -6,6 +6,7 @@ import type {
   UploadFile,
   Download,
   WaitOpts,
+  ClickOpts,
 } from "../types.js";
 
 /** Local Playwright backend. Credentials never leave our infra with this driver. */
@@ -49,8 +50,8 @@ class PlaywrightSession implements Session {
   url(): string {
     return this.page.url();
   }
-  async click(selector: string): Promise<void> {
-    await this.page.click(selector);
+  async click(selector: string, opts: ClickOpts = {}): Promise<void> {
+    await this.page.click(selector, { timeout: opts.timeoutMs });
   }
   async fill(selector: string, value: string): Promise<void> {
     await this.page.fill(selector, value);
@@ -80,7 +81,7 @@ class PlaywrightSession implements Session {
     });
   }
   async waitForLoad(): Promise<void> {
-    await this.page.waitForLoadState("networkidle");
+    await this.page.waitForLoadState("load");
   }
   async waitForHidden(selector: string, opts: WaitOpts = {}): Promise<void> {
     await this.page

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * Centralized, validated environment config. Import `env` anywhere.
@@ -74,9 +76,19 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   if (cached) return cached;
 
   try {
-    (process as { loadEnvFile?: (p?: string) => void }).loadEnvFile?.();
+    let dir = process.cwd();
+    for (let i = 0; i < 4; i++) {
+      const p = join(dir, ".env");
+      if (existsSync(p)) {
+        (process as { loadEnvFile?: (p?: string) => void }).loadEnvFile?.(p);
+        break;
+      }
+      const parent = join(dir, "..");
+      if (parent === dir) break;
+      dir = parent;
+    }
   } catch {
-    // no .env in cwd — fine
+    // no .env in cwd or parents — fine
   }
 
   const parsed = schema.safeParse(source);
