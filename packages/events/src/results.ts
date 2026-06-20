@@ -45,6 +45,29 @@ export const csf = z.object({
 });
 export type CSF = z.infer<typeof csf>;
 
+/**
+ * Claude's read of the vista-previa PDF: the CFDI's parties, payment/timbrado data
+ * and a plain-language insight ("a quién va dirigida", qué ampara, etc.). Best-effort
+ * — all fields optional so a failed extraction never blocks the preview.
+ */
+export const invoiceAnalysis = z.object({
+  emisor: z.object({ rfc: z.string(), nombre: z.string() }).partial().optional(),
+  receptor: z
+    .object({ rfc: z.string(), nombre: z.string(), usoCFDI: z.string() })
+    .partial()
+    .optional(),
+  efectoComprobante: z.string().optional(), // Ingreso / Egreso / Pago …
+  formaPago: z.string().optional(),
+  metodoPago: z.string().optional(),
+  moneda: z.string().optional(),
+  folioFiscal: z.string().optional(),
+  fechaEmision: z.string().optional(),
+  selloDigitalPresente: z.boolean().optional(),
+  /** Resumen en lenguaje natural: a quién va dirigida, qué ampara, estado de timbrado. */
+  insight: z.string(),
+});
+export type InvoiceAnalysis = z.infer<typeof invoiceAnalysis>;
+
 export const invoicePreview = z.object({
   receptorRfc: z.string(),
   conceptos: z.array(z.record(z.unknown())),
@@ -52,6 +75,7 @@ export const invoicePreview = z.object({
   iva: z.number(),
   total: z.number(),
   rawArtifactId: z.string(),
+  analysis: invoiceAnalysis.optional(),
 });
 export type InvoicePreview = z.infer<typeof invoicePreview>;
 

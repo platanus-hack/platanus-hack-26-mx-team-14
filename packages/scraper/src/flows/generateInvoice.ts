@@ -4,6 +4,7 @@ import type { Session } from "../types.js";
 import { login } from "../auth.js";
 import { SEL } from "../sat.js";
 import { storeArtifact } from "../artifacts.js";
+import { extractInvoiceFromPdf } from "../invoice-extract.js";
 import { type FlowContext, step } from "./context.js";
 
 /** RFC genérico nacional (público en general) and extranjero. */
@@ -210,6 +211,11 @@ export async function generateInvoice(
     label: "vista-previa",
   });
 
+  // Hand the preview PDF to Claude for an at-a-glance analysis (parties, timbrado,
+  // insight) — same pattern as the CSF. Best-effort: never blocks the preview.
+  step(ctx, "Analizando la vista previa con Claude");
+  const analysis = (await extractInvoiceFromPdf(download.buffer, ctx.correlationId)) ?? undefined;
+
   const subtotal = round2(
     input.conceptos.reduce((s, c) => s + c.cantidad * c.valorUnitario - (c.descuento ?? 0), 0),
   );
@@ -221,7 +227,11 @@ export async function generateInvoice(
     iva,
     total: round2(subtotal + iva),
     rawArtifactId: previewArtifact.id,
+    analysis,
   };
+  if (analysis?.insight) {
+    ctx.emit?.({ kind: "scraping", label: `Análisis: ${analysis.insight}`, status: "ok" });
+  }
 
   // ---- SAFETY GATE ----
   if (!input.confirmed) {
