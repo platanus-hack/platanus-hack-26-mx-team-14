@@ -3,10 +3,11 @@ import { Mic, Send, LogOut, MicOff } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import Orb from '../components/Orb';
 import owlLogo from '../assets/owl-logo.png';
-import CsfCard from '../components/CsfCard';
-import { getCSF } from '../data/csf';
-import { csfSummary } from '../lib/obligaciones';
-import type { OrbState, Page, CSF } from '../types';
+import SkillResultView from '../components/SkillResultView';
+import { runSkill, detectSkill, replyFor } from '../data/skills';
+import type { OrbState, Page, SkillResult } from '../types';
+
+const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 interface DashboardPageProps {
   onNavigate: (page: Page) => void;
@@ -49,7 +50,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
   const [showCards, setShowCards] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [micActive, setMicActive] = useState(false);
-  const [csf, setCsf] = useState<CSF | null>(null);
+  const [result, setResult] = useState<SkillResult | null>(null);
   const typewriterRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -68,47 +69,54 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
     tick();
   }, []);
 
-  const runOrbSequence = useCallback(() => {
+  const runOrbSequence = useCallback((query: string) => {
     if (isProcessing) return;
     setIsProcessing(true);
     setShowCards(false);
     setDisplayText('');
     if (typewriterRef.current) clearTimeout(typewriterRef.current);
 
+    const skill = detectSkill(query);
+
+    const speak = (reply: string) => {
+      setOrbState('speaking');
+      typeText(reply);
+      setTimeout(() => {
+        setOrbState('idle');
+        setIsProcessing(false);
+        setMicActive(false);
+      }, reply.length * 28 + 1200);
+    };
+
     setOrbState('listening');
     setTimeout(() => {
       setOrbState('thinking');
-      setTimeout(() => {
-        setOrbState('speaking');
-        const reply = csf ? csfSummary(csf) : 'Aquí está tu información fiscal.';
-        typeText(reply);
-        setTimeout(() => {
-          setOrbState('idle');
-          setIsProcessing(false);
-          setMicActive(false);
-        }, reply.length * 28 + 1200);
-      }, 2000);
+      // Ask the agent for the data: fixtures today, live SAT when the backend
+      // is wired (runSkill is the only thing that changes). The min-delay keeps
+      // a visible "thinking" beat even when fixtures resolve instantly.
+      Promise.all([runSkill(skill), delay(1500)])
+        .then(([res]) => {
+          setResult(res);
+          speak(replyFor(res));
+        })
+        .catch(() => speak('No pude obtener la información. Intenta de nuevo.'));
     }, 900);
-  }, [isProcessing, typeText, csf]);
+  }, [isProcessing, typeText]);
 
   function handleSend(e: SyntheticEvent) {
     e.preventDefault();
     if (!inputText.trim() || isProcessing) return;
+    const query = inputText;
     setInputText('');
-    runOrbSequence();
+    runOrbSequence(query);
   }
 
   function handleMic() {
     if (isProcessing) return;
     setMicActive(v => !v);
     setInputText('');
-    runOrbSequence();
+    runOrbSequence('genera mi constancia de situación fiscal');
   }
-
-  // Load the CSF. TODAY: fixture (real shape). LATER: getCSF() hits the API.
-  useEffect(() => {
-    getCSF().then(setCsf).catch(() => setCsf(null));
-  }, []);
 
   useEffect(() => {
     return () => { if (typewriterRef.current) clearTimeout(typewriterRef.current); };
@@ -275,7 +283,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                 transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
                 className="w-full"
               >
-                {csf && <CsfCard csf={csf} />}
+                {result && <SkillResultView result={result} />}
               </motion.div>
             )}
           </AnimatePresence>
