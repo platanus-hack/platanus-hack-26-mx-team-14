@@ -1,0 +1,111 @@
+import type { Browser, BrowserContext, Page } from "playwright";
+import { uuid } from "@sat/shared";
+import type {
+  BrowserDriver,
+  Session,
+  UploadFile,
+  Download,
+  WaitOpts,
+} from "../types.js";
+
+/** Local Playwright backend. Credentials never leave our infra with this driver. */
+export class PlaywrightDriver implements BrowserDriver {
+  readonly name = "playwright" as const;
+  private browser: Browser | null = null;
+
+  private async getBrowser(): Promise<Browser> {
+    if (this.browser) return this.browser;
+    const { chromium } = await import("playwright");
+    this.browser = await chromium.launch({ headless: true });
+    return this.browser;
+  }
+
+  async createSession(opts: { rfc: string; correlationId: string }): Promise<Session> {
+    const browser = await this.getBrowser();
+    const context = await browser.newContext({
+      acceptDownloads: true,
+      locale: "es-MX",
+    });
+    const page = await context.newPage();
+    return new PlaywrightSession(uuid(), context, page);
+  }
+}
+
+class PlaywrightSession implements Session {
+  constructor(
+    readonly id: string,
+    private context: BrowserContext,
+    private page: Page,
+  ) {}
+
+  async goto(url: string): Promise<void> {
+    await this.page.goto(url, { waitUntil: "domcontentloaded" });
+  }
+  url(): string {
+    return this.page.url();
+  }
+  async click(selector: string): Promise<void> {
+    await this.page.click(selector);
+  }
+  async fill(selector: string, value: string): Promise<void> {
+    await this.page.fill(selector, value);
+  }
+  async type(selector: string, value: string): Promise<void> {
+    await this.page.type(selector, value);
+  }
+  async selectOption(selector: string, value: string): Promise<void> {
+    await this.page.selectOption(selector, value);
+  }
+  async setInputFiles(selector: string, files: UploadFile[]): Promise<void> {
+    await this.page.setInputFiles(
+      selector,
+      files.map((f) => ({ name: f.name, mimeType: f.mimeType, buffer: f.buffer })),
+    );
+  }
+  async waitFor(selector: string, opts: WaitOpts = {}): Promise<void> {
+    await this.page.waitForSelector(selector, {
+      timeout: opts.timeoutMs ?? 15000,
+      state: opts.state ?? "visible",
+    });
+  }
+  async waitForLoad(): Promise<void> {
+    await this.page.waitForLoadState("networkidle");
+  }
+  async waitForHidden(selector: string, opts: WaitOpts = {}): Promise<void> {
+    await this.page
+      .waitForSelector(selector, { timeout: opts.timeoutMs ?? 15000, state: "hidden" })
+      .catch(() => void 0);
+  }
+  async innerText(selector: string): Promise<string> {
+    return this.page.innerText(selector);
+  }
+  async getAttribute(selector: string, attr: string): Promise<string | null> {
+    return this.page.getAttribute(selector, attr);
+  }
+  async exists(selector: string): Promise<boolean> {
+    return (await this.page.locator(selector).count()) > 0;
+  }
+  async screenshot(selector?: string): Promise<Buffer> {
+    if (selector) return this.page.locator(selector).first().screenshot();
+    return this.page.screenshot();
+  }
+  async captureDownload(trigger: () => Promise<void>): Promise<Download> {
+    const [download] = await Promise.all([
+      this.page.waitForEvent("download"),
+      trigger(),
+    ]);
+    const stream = await download.createReadStream();
+    const chunks: Buffer[] = [];
+    for await (const c of stream) chunks.push(c as Buffer);
+    return { buffer: Buffer.concat(chunks), filename: download.suggestedFilename() };
+  }
+  async evaluate<T>(expression: string): Promise<T> {
+    return this.page.evaluate(expression) as Promise<T>;
+  }
+  async liveViewUrl(): Promise<string | null> {
+    return null; // Playwright is local — no hosted live view.
+  }
+  async close(): Promise<void> {
+    await this.context.close();
+  }
+}
