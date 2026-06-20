@@ -2,6 +2,7 @@ import "./types.js";
 import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from "fastify";
 import cors from "@fastify/cors";
 import fastifyJwt from "@fastify/jwt";
+import fastifyMultipart from "@fastify/multipart";
 import { env } from "@sat/shared";
 import { skillsRoutes } from "./routes/skills.js";
 import { streamRoutes } from "./routes/stream.js";
@@ -23,8 +24,12 @@ export async function buildServer(): Promise<FastifyInstance> {
         : {}),
     },
   });
-  await app.register(cors, { origin: env.WEB_ORIGIN, credentials: true });
+  const corsOrigin = env.WEB_ORIGIN?.replace(/\/+$/, "") || "http://localhost:3001";
+  await app.register(cors, { origin: corsOrigin, credentials: true });
   await app.register(fastifyJwt, { secret: env.JWT_SECRET });
+  await app.register(fastifyMultipart, {
+    limits: { fileSize: 1_000_000, files: 2 },
+  });
 
   app.decorate("authenticate", async (req: FastifyRequest, reply: FastifyReply) => {
     try {
