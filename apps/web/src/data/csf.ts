@@ -1,23 +1,23 @@
 import type { CSF } from '../types';
 
 /**
- * Anonymized demo CSF — same shape as the `generateCSF` skill output, so the
- * dashboard renders against the real shape without committing anyone's real
- * fiscal data. Swap `getCSF` to the API call when the pipeline is wired — the
- * components never change because they render the `CSF` type, not this object.
+ * Demo CSF — the real `generateCSF` skill output for the test RFC RAOA0111176P7.
+ * Same shape as the live pipeline, so the dashboard renders against real data.
+ * Swap `getCSF` to the API call when the pipeline is wired — the components never
+ * change because they render the `CSF` type, not this object.
  */
 export const csfFixture: CSF = {
-  rfc: 'PEMJ900315H40',
-  nombre: 'JUAN CARLOS PÉREZ MARTÍNEZ',
+  rfc: 'RAOA0111176P7',
+  nombre: 'ANDRICK DANIEL RAMOS ORTEGA',
   regimenFiscal: [
-    { nombre: 'Régimen de Sueldos y Salarios e Ingresos Asimilados a Salarios', porcentaje: 60 },
-    { nombre: 'Régimen Simplificado de Confianza', porcentaje: 40 },
+    { nombre: 'Régimen de Sueldos y Salarios e Ingresos Asimilados a Salarios' },
+    { nombre: 'Régimen Simplificado de Confianza' },
   ],
   domicilioFiscal: {
-    codigoPostal: '03100',
+    codigoPostal: '11800',
     entidad: 'CIUDAD DE MEXICO',
-    municipio: 'BENITO JUAREZ',
-    colonia: 'DEL VALLE',
+    municipio: 'MIGUEL HIDALGO',
+    colonia: 'ESCANDON I SECCION',
   },
   obligaciones: [
     {
@@ -39,7 +39,7 @@ export const csfFixture: CSF = {
       vencimiento: 'A más tardar el día 30 del mes de abril del ejercicio siguiente',
     },
   ],
-  pdfArtifactId: '00000000-0000-0000-0000-000000000000',
+  pdfArtifactId: '5cff40e3-24f6-4764-b3a7-2d8191a889fd',
 };
 
 /**

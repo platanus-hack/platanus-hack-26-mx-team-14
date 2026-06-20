@@ -2,7 +2,7 @@ import api from '../lib/api';
 import type { SkillName, SkillResult } from '../types';
 import { csfSummary } from '../lib/obligaciones';
 import { csfFixture } from './csf';
-import { invoicesFixture } from './invoices';
+import { emitidasFixture, recibidasFixture } from './invoices';
 
 /**
  * Single switch for the whole front↔back connection.
@@ -46,20 +46,30 @@ function fixtureFor(skill: SkillName): SkillResult {
     case 'generateCSF':
       return { skill: 'generateCSF', csf: csfFixture };
     case 'getEmitedInvoices':
-      return { skill: 'getEmitedInvoices', invoices: invoicesFixture };
+      return { skill: 'getEmitedInvoices', invoices: emitidasFixture };
     case 'getReceiptInvoices':
-      return { skill: 'getReceiptInvoices', invoices: invoicesFixture };
+      return { skill: 'getReceiptInvoices', invoices: recibidasFixture };
     case 'generateInvoice':
       return {
         skill: 'generateInvoice',
         status: 'previewed',
         preview: {
-          receptorRfc: 'ACO050101AB1',
-          conceptos: [{ descripcion: 'Servicios de consultoría', cantidad: 1, valorUnitario: 10000 }],
-          subtotal: 10000,
-          iva: 1600,
-          total: 11600,
-          rawArtifactId: '00000000-0000-0000-0000-000000000000',
+          receptorRfc: 'XAXX010101000',
+          conceptos: [
+            {
+              claveProdServ: '01010101',
+              descripcion: 'Prueba',
+              claveUnidad: 'H87',
+              cantidad: 1,
+              valorUnitario: 11600,
+              descuento: 0,
+              objetoImpuesto: '02',
+            },
+          ],
+          subtotal: 11600,
+          iva: 1856,
+          total: 13456,
+          rawArtifactId: 'e7f1f401-3b41-4791-93cb-163bf2140ff6',
         },
       };
   }
@@ -68,10 +78,21 @@ function fixtureFor(skill: SkillName): SkillResult {
 /** Map a natural-language request to a skill (simple intent detection). */
 export function detectSkill(text: string): SkillName {
   const t = text.toLowerCase();
-  if (/constancia|csf|r[eé]gimen|situaci[oó]n fiscal|obligaci|vencimiento/.test(t)) {
+  // Constancia / régimen / obligaciones → CSF
+  if (/constancia|csf|r[eé]gimen|situaci[oó]n fiscal|obligaci|vencimiento|domicilio fiscal/.test(t)) {
     return 'generateCSF';
   }
-  if (/recibid/.test(t)) return 'getReceiptInvoices';
+  // CREAR una factura nueva (verbo de creación + "factura/cfdi", o "facturar a …").
+  // Va antes que la consulta de facturas para no confundirse con "facturas emitidas".
+  if (
+    /(gen[eé]r|emit|crea|elabor|haz|saca|nueva|quier|necesit|dame)[^.]{0,18}\b(factura|cfdi)\b/.test(t) ||
+    /facturar\b/.test(t)
+  ) {
+    return 'generateInvoice';
+  }
+  // Consultar facturas recibidas (de proveedores / lo que me facturaron).
+  if (/recibid|me factur|proveedor/.test(t)) return 'getReceiptInvoices';
+  // Consultar facturas emitidas / ingresos.
   if (/emit|factura|cfdi|ingreso/.test(t)) return 'getEmitedInvoices';
   return 'generateCSF';
 }

@@ -1,57 +1,55 @@
 import type { Invoice } from '../types';
 
 /**
- * Anonymized demo invoices — same shape as the getEmitedInvoices /
- * getReceiptInvoices skill output. Used to build the visualization against the
- * real shape; the live data flows in via runSkill() when the backend is wired.
+ * Demo invoices for the test RFC RAOA0111176P7 — same shape as the
+ * getReceiptInvoices / getEmitedInvoices skill output. `recibidasFixture` is the
+ * real `getReceiptInvoices` result; `emitidasFixture` mirrors it for the emitidas
+ * intent (no real emitidas sample yet). Live data flows in via runSkill() when
+ * the backend is wired — the components never change.
  */
-export const invoicesFixture: Invoice[] = [
+
+/** Real `getReceiptInvoices` result for RAOA0111176P7 (1 factura recibida). */
+export const recibidasFixture: Invoice[] = [
   {
-    uuid: 'A1B2C3D4-0001-4E5F-9A0B-1C2D3E4F5A60',
-    rfcEmisor: 'PEMJ900315H40',
-    rfcReceptor: 'ACO050101AB1',
-    nombreReceptor: 'ACME CONSULTORÍA SA DE CV',
-    fechaEmision: '2026-05-22T10:15:00Z',
-    subtotal: 15000,
-    iva: 2400,
-    total: 17400,
-    estado: 'Vigente',
-    tipoComprobante: 'I',
-  },
-  {
-    uuid: 'A1B2C3D4-0002-4E5F-9A0B-1C2D3E4F5A61',
-    rfcEmisor: 'PEMJ900315H40',
-    rfcReceptor: 'DIG180920QX3',
-    nombreReceptor: 'DIGITAL HOUSE MX SA DE CV',
-    fechaEmision: '2026-05-18T09:00:00Z',
-    subtotal: 8500,
-    iva: 1360,
-    total: 9860,
-    estado: 'Vigente',
-    tipoComprobante: 'I',
-  },
-  {
-    uuid: 'A1B2C3D4-0003-4E5F-9A0B-1C2D3E4F5A62',
-    rfcEmisor: 'PEMJ900315H40',
-    rfcReceptor: 'TEC110704RM8',
-    nombreReceptor: 'TECNOLOGÍAS NORTE SA DE CV',
-    fechaEmision: '2026-05-15T16:40:00Z',
-    subtotal: 6000,
-    iva: 960,
-    total: 6960,
-    estado: 'Cancelado',
-    tipoComprobante: 'I',
-  },
-  {
-    uuid: 'A1B2C3D4-0004-4E5F-9A0B-1C2D3E4F5A63',
-    rfcEmisor: 'PEMJ900315H40',
-    rfcReceptor: 'ACO050101AB1',
-    nombreReceptor: 'ACME CONSULTORÍA SA DE CV',
-    fechaEmision: '2026-05-08T11:25:00Z',
-    subtotal: 12000,
-    iva: 1920,
-    total: 13920,
+    uuid: '70333722-2728-46D5-B255-5835C7756332',
+    rfcEmisor: 'ROM240313I36',
+    rfcReceptor: 'RAOA0111176P7',
+    fechaEmision: '2026-01-30',
+    subtotal: 253.45,
+    iva: 40.55,
+    total: 294,
     estado: 'Vigente',
     tipoComprobante: 'I',
   },
 ];
+
+/** Facturas emitidas por RAOA0111176P7 (muestra coherente para el intent emitidas). */
+export const emitidasFixture: Invoice[] = [
+  {
+    uuid: 'E7F1F401-3B41-4791-93CB-163BF2140FF6',
+    rfcEmisor: 'RAOA0111176P7',
+    rfcReceptor: 'XAXX010101000',
+    nombreReceptor: 'FACTURA GLOBAL',
+    fechaEmision: '2026-01-30',
+    subtotal: 11600,
+    iva: 1856,
+    total: 13456,
+    estado: 'Vigente',
+    tipoComprobante: 'I',
+  },
+  {
+    uuid: 'A8C2D110-0042-4E5F-9A0B-7C2D3E4F5A11',
+    rfcEmisor: 'RAOA0111176P7',
+    rfcReceptor: 'ROM240313I36',
+    nombreReceptor: 'ROMA SERVICIOS DIGITALES',
+    fechaEmision: '2026-01-15',
+    subtotal: 5000,
+    iva: 800,
+    total: 5800,
+    estado: 'Vigente',
+    tipoComprobante: 'I',
+  },
+];
+
+/** Back-compat alias used by the recibidas intent. */
+export const invoicesFixture = recibidasFixture;
