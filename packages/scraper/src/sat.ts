@@ -47,19 +47,20 @@ export const SEL = {
     submit: "#submit, #buttonFielSubmit",
   },
 
-  // --- Consulta (emitidas/recibidas) ---
+  // --- Consulta (emitidas/recibidas) — verified via dump-on-failure ---
   consulta: {
-    fechaTab: "#ctl00_MainContent_RdoFechas, a:has-text('Fecha de Emisión')",
-    fechaInicial: "#ctl00_MainContent_TxtFechaInicial",
-    fechaFinal: "#ctl00_MainContent_TxtFechaFinal",
-    rfcReceptor: "#ctl00_MainContent_TxtRfcReceptor",
-    rfcEmisor: "#ctl00_MainContent_TxtRfcEmisor",
-    estado: "#ctl00_MainContent_ddlEstadoComprobante",
-    tipoComprobante: "#ctl00_MainContent_ddlTipoComprobante",
+    // ASP.NET WebForms; "por fechas" is a radio that must be selected first.
+    modoFechas: "#ctl00_MainContent_RdoFechas",
+    modoFolio: "#ctl00_MainContent_RdoFolioFiscal",
+    uuid: "#ctl00_MainContent_TxtUUID",
+    // Date fields are AjaxControlToolkit calendar text inputs (dd/mm/yyyy).
+    fechaInicial: "#ctl00_MainContent_CldFechaInicial2_Calendario_text",
+    fechaFinal: "#ctl00_MainContent_CldFechaFinal2_Calendario_text",
+    rfcReceptor: "#ctl00_MainContent_TxtRfcReceptor", // ConsultaEmisor
+    rfcEmisor: "#ctl00_MainContent_TxtRfcEmisor", // ConsultaReceptor
+    estado: "#ctl00_MainContent_DdlEstadoComprobante",
     buscar: "#ctl00_MainContent_BtnBusqueda",
-    resultsTable: "#ctl00_MainContent_tblResult, table#tblResult",
-    resultsRow: "#ctl00_MainContent_tblResult tr",
-    loadingMask: ".blockUI, #loadingMask, .loading",
+    loadingMask: ".blockUI, #loadingMask, .loading, .modal.in",
   },
 
   // --- Genera Factura ---

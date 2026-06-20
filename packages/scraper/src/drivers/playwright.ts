@@ -59,7 +59,13 @@ class PlaywrightSession implements Session {
     await this.page.type(selector, value);
   }
   async selectOption(selector: string, value: string): Promise<void> {
-    await this.page.selectOption(selector, value);
+    // SAT <select> option values often differ from the visible label — try both.
+    // SAT things...
+    try {
+      await this.page.selectOption(selector, value);
+    } catch {
+      await this.page.selectOption(selector, { label: value });
+    }
   }
   async setInputFiles(selector: string, files: UploadFile[]): Promise<void> {
     await this.page.setInputFiles(
