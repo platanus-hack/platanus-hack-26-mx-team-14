@@ -27,7 +27,9 @@ export async function generateCSF(ctx: FlowContext): Promise<CSF> {
 
   step(ctx, "Generando la Constancia de Situación Fiscal");
   await session.goto(SAT_URLS.miEspacio);
-  await session.waitFor(SEL.csf.constanciaLink);
+  // Wait for full page load before scanning for the button (SAT portal is slow)
+  await session.waitForLoad();
+  await session.waitFor(SEL.csf.constanciaLink, { timeoutMs: 30_000 });
 
   // The portal sometimes shows an intermediate page before the actual PDF download.
   // Strategy: start listening for the download event, click the primary button,

@@ -179,20 +179,36 @@ export const SEL = {
     sellar: "a.btn-sellar-factura, a:has-text('Sellar')",
   },
 
-  // --- Portal SAT login (RFC + Contraseña, no captcha) — verified via diagnose ---
+  // --- Portal SAT login (RFC + Contraseña, no captcha) ---
   portal: {
-    rfc: 'input[placeholder="RFC"]',
-    password: 'input[name="password"]',
-    submit: 'button:has-text("Enviar")',
+    // Multiple fallbacks — SAT has changed these inputs across deployments
+    rfc: 'input[placeholder="RFC"], input[name="rfc"], #rfc, input[id*="rfc" i]',
+    password: 'input[name="password"], input[type="password"], #password',
+    submit: 'button:has-text("Enviar"), button[type="submit"], input[type="submit"]',
   },
 
-  // --- Mi Espacio (CSF) — verified via dump-on-failure ---
+  // --- Mi Espacio (CSF) ---
   csf: {
-    // It's a <button type="submit">, not a link.
-    constanciaLink: "button:has-text('Constancia de Situación Fiscal')",
-    // Likely intermediate page: a generar/descargar/imprimir trigger (best-effort;
-    // the next dump-on-failure will confirm if the first click isn't a direct PDF).
-    descargar:
-      "button:has-text('Generar'), button:has-text('Descargar'), button:has-text('Imprimir'), a:has-text('Descargar')",
+    // Broad selector: SAT renders this as a button OR anchor depending on deployment.
+    // Case-insensitive text fallbacks cover "Situación" vs "Situacion" encoding issues.
+    constanciaLink: [
+      "button:has-text('Constancia de Situación Fiscal')",
+      "button:has-text('Constancia de situación fiscal')",
+      "a:has-text('Constancia de Situación Fiscal')",
+      "a:has-text('Constancia de situación fiscal')",
+      "[href*='constancia' i]",
+      "[href*='csf' i]",
+      "button:has-text('Constancia')",
+      "a:has-text('Constancia')",
+    ].join(", "),
+    descargar: [
+      "button:has-text('Generar')",
+      "button:has-text('Descargar')",
+      "button:has-text('Imprimir')",
+      "a:has-text('Descargar')",
+      "a:has-text('Generar')",
+      "input[value*='Generar' i]",
+      "input[value*='Descargar' i]",
+    ].join(", "),
   },
 } as const;
