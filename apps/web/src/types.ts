@@ -31,3 +31,39 @@ export interface CSF {
   obligaciones: Obligacion[];
   pdfArtifactId: string;
 }
+
+export interface Invoice {
+  uuid: string;
+  rfcEmisor: string;
+  rfcReceptor: string;
+  nombreEmisor?: string;
+  nombreReceptor?: string;
+  fechaEmision: string;
+  subtotal: number;
+  iva?: number;
+  total: number;
+  estado: 'Vigente' | 'Cancelado';
+  tipoComprobante: 'I' | 'E' | 'P' | 'N' | 'T';
+}
+
+export interface InvoicePreview {
+  receptorRfc: string;
+  conceptos: Record<string, unknown>[];
+  subtotal: number;
+  iva: number;
+  total: number;
+  rawArtifactId: string;
+}
+
+export interface IssuedInvoice {
+  uuid: string;
+  pdfArtifactId?: string;
+  xmlArtifactId?: string;
+}
+
+export type SkillResult =
+  | { skill: 'getEmitedInvoices'; invoices: Invoice[] }
+  | { skill: 'getReceiptInvoices'; invoices: Invoice[] }
+  | { skill: 'generateCSF'; csf: CSF }
+  | { skill: 'generateInvoice'; status: 'previewed'; preview: InvoicePreview }
+  | { skill: 'generateInvoice'; status: 'issued'; issued: IssuedInvoice };

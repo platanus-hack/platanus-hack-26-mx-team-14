@@ -4,6 +4,7 @@ import { scrypt, randomBytes, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { eq } from "drizzle-orm";
 import { db, users, credentials } from "@sat/db";
+import { seal } from "@sat/shared";
 
 const scryptAsync = promisify(scrypt);
 
@@ -23,9 +24,9 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
 export async function authRoutes(app: FastifyInstance) {
   // POST /auth/register
   app.post<{
-    Body: { name: string; email: string; password: string; rfc?: string };
+    Body: { name: string; email: string; password: string; rfc?: string; ciecPassword?: string };
   }>("/auth/register", async (req, reply) => {
-    const { name, email, password, rfc } = req.body;
+    const { name, email, password, rfc, ciecPassword } = req.body;
 
     if (!name || !email || !password) {
       return reply.code(400).send({ error: "name, email y password son requeridos" });
@@ -52,9 +53,13 @@ export async function authRoutes(app: FastifyInstance) {
 
     if (rfc && rfc.length >= 12) {
       finalRfc = rfc.toUpperCase();
+      let encPassword: string | null = null;
+      if (ciecPassword) {
+        try { encPassword = seal(ciecPassword); } catch { /* ENCRYPTION_KEY not set */ }
+      }
       const credRows = await db()
         .insert(credentials)
-        .values({ userId: user.id, rfc: finalRfc, kind: "ciec" })
+        .values({ userId: user.id, rfc: finalRfc, kind: "ciec", encPassword })
         .returning();
       credentialId = credRows[0]?.id ?? null;
     }

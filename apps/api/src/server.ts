@@ -7,9 +7,11 @@ import { skillsRoutes } from "./routes/skills.js";
 import { streamRoutes } from "./routes/stream.js";
 import { voiceRoutes } from "./routes/voice.js";
 import { agentRoutes } from "./routes/agent.js";
+import { agentVoiceRoutes } from "./routes/agentVoice.js";
 import { authRoutes } from "./routes/auth.js";
 import { publicVoiceRoutes } from "./routes/publicVoice.js";
 import { publicLlmRoutes } from "./routes/publicLlm.js";
+import { mockRoutes } from "./routes/mock.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -41,6 +43,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(streamRoutes);
   await app.register(voiceRoutes);
   await app.register(agentRoutes);
+  await app.register(agentVoiceRoutes);
+  await app.register(mockRoutes);
 
   return app;
 }

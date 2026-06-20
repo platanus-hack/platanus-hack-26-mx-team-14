@@ -10,7 +10,8 @@
     "lint": "echo ok",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "db:seed": "tsx src/seed.ts"
   },
   "dependencies": {
     "@sat/shared": "workspace:*",

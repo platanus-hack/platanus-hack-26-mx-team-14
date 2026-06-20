@@ -18,6 +18,7 @@ interface SignupData {
   email: string;
   password: string;
   rfc: string;
+  ciecPassword: string;
 }
 
 const brandFeatures = [
@@ -38,8 +39,9 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
   const [loginError, setLoginError] = useState('');
 
   const [signup, setSignup] = useState<SignupData>({
-    name: '', email: '', password: '', rfc: '',
+    name: '', email: '', password: '', rfc: '', ciecPassword: '',
   });
+  const [showCiecPassword, setShowCiecPassword] = useState(false);
   const [signupError, setSignupError] = useState('');
 
   async function handleLogin(e: SyntheticEvent) {
@@ -80,6 +82,7 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
         email: signup.email,
         password: signup.password,
         rfc: signup.rfc || undefined,
+        ciecPassword: signup.ciecPassword || undefined,
       });
       setToken(data.token);
       setUser(data.user);
@@ -354,7 +357,7 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                       </div>
                     ))}
                     <span className="text-xs text-muted ml-1">
-                      {step === 1 ? 'Datos de cuenta' : 'RFC (opcional)'}
+                      {step === 1 ? 'Datos de cuenta' : 'Conectar SAT'}
                     </span>
                   </div>
 
@@ -464,9 +467,9 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                         className="flex flex-col gap-4"
                       >
                         <div>
-                          <h2 className="text-xl font-semibold text-ink tracking-tight">RFC del SAT</h2>
+                          <h2 className="text-xl font-semibold text-ink tracking-tight">Conectar con el SAT</h2>
                           <p className="text-sm text-muted mt-1">
-                            Opcional. Puedes agregarlo más tarde desde tu perfil.
+                            Opcional. Tus credenciales se guardan cifradas con AES-256.
                           </p>
                         </div>
 
@@ -491,7 +494,7 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                             autoComplete="off"
                             value={signup.rfc}
                             onChange={e => setField('rfc', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 13))}
-                            placeholder="XAXX010101000 (opcional)"
+                            placeholder="XAXX010101000"
                             maxLength={13}
                             aria-describedby={rfcError ? 'rfc-error' : undefined}
                             className={`input-field w-full h-11 px-4 rounded-xl bg-surface border text-sm font-mono text-ink placeholder:text-subtle focus:outline-none transition-colors ${
@@ -503,6 +506,36 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                               {rfcError}
                             </p>
                           )}
+                        </div>
+
+                        <div>
+                          <label htmlFor="signup-ciec" className="block text-xs text-muted mb-1.5 font-medium uppercase tracking-wide">
+                            Contraseña CIEC
+                          </label>
+                          <div className="relative">
+                            <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-subtle pointer-events-none" aria-hidden="true" />
+                            <input
+                              id="signup-ciec"
+                              type={showCiecPassword ? 'text' : 'password'}
+                              autoComplete="off"
+                              value={signup.ciecPassword}
+                              onChange={e => setField('ciecPassword', e.target.value)}
+                              placeholder="Tu contraseña del SAT"
+                              className="input-field w-full h-11 pl-10 pr-10 rounded-xl bg-surface border border-border text-sm text-ink placeholder:text-subtle focus:outline-none focus:border-emerald/60 transition-colors"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowCiecPassword(v => !v)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-subtle hover:text-muted transition-colors"
+                              aria-label={showCiecPassword ? 'Ocultar contraseña CIEC' : 'Mostrar contraseña CIEC'}
+                            >
+                              {showCiecPassword ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
+                            </button>
+                          </div>
+                          <p className="text-xs text-subtle mt-1.5 flex items-center gap-1">
+                            <ShieldCheck size={11} className="text-emerald shrink-0" />
+                            Cifrada en tu dispositivo antes de enviarse
+                          </p>
                         </div>
 
                         <div className="flex gap-3 mt-1">

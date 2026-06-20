@@ -10,9 +10,16 @@ RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 
 WORKDIR /app
 
+# sharp prebuilt binaries need these libs on Noble
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 libexpat1 && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY packages ./packages
 COPY apps/worker ./apps/worker
 RUN pnpm install --frozen-lockfile || pnpm install
+# Ensure sharp native bindings are built for this platform
+RUN pnpm --filter @sat/scraper rebuild sharp 2>/dev/null || true
 
 CMD ["pnpm", "--filter", "@sat/worker", "dev"]

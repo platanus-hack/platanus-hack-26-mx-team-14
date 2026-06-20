@@ -1,188 +1,181 @@
-import { useState, useRef, useEffect, useCallback, type SyntheticEvent } from 'react';
-import { Mic, Send, LogOut, MicOff } from 'lucide-react';
+import { useState, useRef, useEffect, type SyntheticEvent } from 'react';
+import { Send, LogOut, Mic, MicOff } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import Orb from '../components/Orb';
-import owlLogo from '../assets/owl-logo.png';
 import CsfCard from '../components/CsfCard';
-import { getCSF } from '../data/csf';
-import { csfSummary } from '../lib/obligaciones';
-import type { OrbState, Page, CSF } from '../types';
+import InvoiceListCard from '../components/InvoiceListCard';
+import InvoicePreviewCard from '../components/InvoicePreviewCard';
+import Markdown from '../components/Markdown';
+import owlLogo from '../assets/owl-logo.png';
+import { useVoiceAgent } from '../hooks/useVoiceAgent';
+import type { Page, SkillResult } from '../types';
 
 interface DashboardPageProps {
   onNavigate: (page: Page) => void;
   onLogout?: () => void;
 }
 
-const orbGlowColor: Record<OrbState, string> = {
+const orbGlow: Record<string, string> = {
   idle:      'oklch(0.55 0.16 230)',
-  listening: 'oklch(0.72 0.17 162)',
-  thinking:  'oklch(0.50 0.18 295)',
-  speaking:  'oklch(0.68 0.20 198)',
+  ready:     'oklch(0.62 0.17 160)',
+  speech:    'oklch(0.72 0.20 150)',
+  processing:'oklch(0.50 0.18 295)',
+  playing:   'oklch(0.68 0.20 198)',
+};
+const orbStateMap: Record<string, 'idle' | 'listening' | 'thinking' | 'speaking'> = {
+  idle: 'idle', ready: 'idle', speech: 'listening', processing: 'thinking', playing: 'speaking',
+};
+const statusLabels: Record<string, string> = {
+  idle: 'Listo', ready: 'Escuchando…', speech: 'Hablando…', processing: 'Procesando…', playing: 'Respondiendo',
 };
 
-const stateLabels: Record<OrbState, string> = {
-  idle:      'Listo',
-  listening: 'Escuchando…',
-  thinking:  'Procesando…',
-  speaking:  'Respondiendo',
-};
+// ── Dynamic card renderer ─────────────────────────────────────────────────────
+function SkillCard({ result, onConfirmInvoice }: { result: SkillResult; onConfirmInvoice?: () => void }) {
+  switch (result.skill) {
+    case 'getEmitedInvoices':
+      return <InvoiceListCard invoices={result.invoices} kind="emitidas" />;
+    case 'getReceiptInvoices':
+      return <InvoiceListCard invoices={result.invoices} kind="recibidas" />;
+    case 'generateCSF':
+      return <CsfCard csf={result.csf} />;
+    case 'generateInvoice':
+      if (result.status === 'previewed') {
+        return <InvoicePreviewCard preview={result.preview} onConfirm={onConfirmInvoice} />;
+      }
+      return (
+        <div className="rounded-xl border border-emerald/30 bg-emerald-lo p-5 text-center">
+          <p className="text-sm font-semibold text-emerald">Factura emitida</p>
+          <p className="text-xs text-muted mt-1 font-mono">{result.issued.uuid}</p>
+        </div>
+      );
+    default:
+      return null;
+  }
+}
 
-const statePill: Record<OrbState, string> = {
-  idle:      'border-border text-muted bg-surface',
-  listening: 'border-emerald/40 text-emerald bg-emerald-lo',
-  thinking:  'border-purple-700/50 text-purple-300 bg-purple-950/30',
-  speaking:  'border-sky-700/50 text-sky-300 bg-sky-950/30',
-};
-
-const stateDot: Record<OrbState, string> = {
-  idle:      'bg-muted',
-  listening: 'bg-emerald',
-  thinking:  'bg-purple-400',
-  speaking:  'bg-sky-400',
-};
+// ── Layout states ─────────────────────────────────────────────────────────────
+type LayoutState = 'empty' | 'active' | 'split';
 
 export default function DashboardPage({ onNavigate, onLogout }: DashboardPageProps) {
-  const prefersReducedMotion = useReducedMotion();
-  const [orbState, setOrbState] = useState<OrbState>('idle');
+  const reduce = useReducedMotion();
+  const [layout, setLayout] = useState<LayoutState>('empty');
   const [inputText, setInputText] = useState('');
-  const [displayText, setDisplayText] = useState('');
-  const [showCards, setShowCards] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [micActive, setMicActive] = useState(false);
-  const [csf, setCsf] = useState<CSF | null>(null);
-  const typewriterRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const typeText = useCallback((text: string) => {
-    setDisplayText('');
-    let i = 0;
-    function tick() {
-      if (i < text.length) {
-        setDisplayText(text.slice(0, i + 1));
-        i++;
-        typewriterRef.current = setTimeout(tick, 28);
-      } else {
-        setShowCards(true);
+  const agent = useVoiceAgent();
+  const { status, messages, streamText, toolActivity, skillResult, error, sessionActive } = agent;
+
+  const glow = orbGlow[status] ?? orbGlow.idle;
+  const orbState = orbStateMap[status] ?? 'idle';
+
+  // When the agent produces its first result, expand to split layout
+  useEffect(() => {
+    if ((messages.length > 0 || skillResult) && layout !== 'split') {
+      setLayout('split');
+    }
+  }, [messages.length, skillResult, layout]);
+
+  // Spacebar activates session when not focused on an input
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      if (e.code === 'Space' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        e.preventDefault();
+        if (layout === 'empty') setLayout('active');
+        if (status === 'idle') agent.startSession();
+        else if (status === 'ready' || status === 'playing') agent.endSession();
+      }
+      if (e.code === 'Escape' && sessionActive) {
+        agent.endSession();
       }
     }
-    tick();
-  }, []);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [layout, status, sessionActive, agent]);
 
-  const runOrbSequence = useCallback(() => {
-    if (isProcessing) return;
-    setIsProcessing(true);
-    setShowCards(false);
-    setDisplayText('');
-    if (typewriterRef.current) clearTimeout(typewriterRef.current);
-
-    setOrbState('listening');
-    setTimeout(() => {
-      setOrbState('thinking');
-      setTimeout(() => {
-        setOrbState('speaking');
-        const reply = csf ? csfSummary(csf) : 'Aquí está tu información fiscal.';
-        typeText(reply);
-        setTimeout(() => {
-          setOrbState('idle');
-          setIsProcessing(false);
-          setMicActive(false);
-        }, reply.length * 28 + 1200);
-      }, 2000);
-    }, 900);
-  }, [isProcessing, typeText, csf]);
-
-  function handleSend(e: SyntheticEvent) {
+  async function handleSend(e: SyntheticEvent) {
     e.preventDefault();
-    if (!inputText.trim() || isProcessing) return;
+    if (!inputText.trim()) return;
+    if (layout === 'empty') setLayout('active');
+    const text = inputText;
     setInputText('');
-    runOrbSequence();
+    await agent.sendText(text);
   }
 
-  function handleMic() {
-    if (isProcessing) return;
-    setMicActive(v => !v);
-    setInputText('');
-    runOrbSequence();
+  function handleMicClick() {
+    if (layout === 'empty') setLayout('active');
+    if (status === 'idle') agent.startSession();
+    else agent.endSession();
   }
 
-  // Load the CSF. TODAY: fixture (real shape). LATER: getCSF() hits the API.
-  useEffect(() => {
-    getCSF().then(setCsf).catch(() => setCsf(null));
-  }, []);
-
-  useEffect(() => {
-    return () => { if (typewriterRef.current) clearTimeout(typewriterRef.current); };
-  }, []);
-
-  const glowColor = orbGlowColor[orbState];
+  const orbSize = layout === 'split' ? 120 : 260;
 
   return (
     <div className="h-screen bg-bg flex flex-col overflow-hidden relative">
 
-      {/* Full-screen atmospheric glow — transitions with orb state */}
+      {/* Atmospheric glow */}
       <motion.div
         className="absolute inset-0 pointer-events-none"
         aria-hidden="true"
-        animate={{ opacity: orbState === 'idle' ? 0.6 : 1 }}
-        transition={{ duration: 1.2, ease: 'easeInOut' }}
+        animate={{ opacity: status === 'idle' ? 0.5 : 0.9 }}
+        transition={{ duration: 1.2 }}
       >
         <motion.div
           className="absolute rounded-full"
-          style={{
-            width: 700, height: 700,
-            top: '50%', left: '50%',
-            transform: 'translate(-50%, -60%)',
-            filter: 'blur(120px)',
-          }}
-          animate={{ background: `radial-gradient(circle, ${glowColor} 0%, transparent 65%)` }}
-          transition={{ duration: 0.9, ease: 'easeInOut' }}
+          style={{ width: 700, height: 700, top: '50%', left: '50%', transform: 'translate(-50%, -60%)', filter: 'blur(120px)' }}
+          animate={{ background: `radial-gradient(circle, ${glow} 0%, transparent 65%)` }}
+          transition={{ duration: 0.9 }}
           initial={false}
         />
       </motion.div>
 
-      {/* Subtle dot grid texture */}
+      {/* Dot grid */}
       <div
         className="absolute inset-0 pointer-events-none opacity-[0.025]"
         aria-hidden="true"
-        style={{
-          backgroundImage: 'radial-gradient(circle, oklch(0.96 0.003 257) 1px, transparent 1px)',
-          backgroundSize: '28px 28px',
-        }}
+        style={{ backgroundImage: 'radial-gradient(circle, oklch(0.96 0.003 257) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
       />
 
       {/* Header */}
       <header className="relative shrink-0 border-b border-border bg-bg/70 backdrop-blur-md" style={{ zIndex: 10 }}>
-        <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <img src={owlLogo} alt="" aria-hidden="true" className="w-7 h-7 rounded-full object-cover" style={{ objectPosition: 'center 18%' }} />
             <span className="font-semibold text-ink text-sm tracking-tight">SATI</span>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* State pill */}
+            {/* Status pill */}
             <AnimatePresence mode="wait">
               <motion.div
-                key={orbState}
+                key={`${status}-${toolActivity ?? ''}`}
                 initial={{ opacity: 0, scale: 0.88, y: -4 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.88, y: 4 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className={`h-7 px-3 rounded-full border text-xs font-medium flex items-center gap-2 ${statePill[orbState]}`}
+                transition={{ duration: 0.2 }}
+                className={`h-7 px-3 rounded-full border text-xs font-medium flex items-center gap-2 ${
+                  status === 'speech' || status === 'ready'
+                    ? 'border-emerald/40 text-emerald bg-emerald-lo'
+                    : status === 'processing'
+                    ? 'border-purple-700/50 text-purple-300 bg-purple-950/30'
+                    : status === 'playing'
+                    ? 'border-sky-700/50 text-sky-300 bg-sky-950/30'
+                    : 'border-border text-muted bg-surface'
+                }`}
                 role="status"
                 aria-live="polite"
-                aria-label={`Estado del asistente: ${stateLabels[orbState]}`}
               >
-                <motion.span
-                  className={`w-1.5 h-1.5 rounded-full ${stateDot[orbState]}`}
-                  animate={
-                    !prefersReducedMotion && orbState !== 'idle'
-                      ? { opacity: [1, 0.3, 1] }
-                      : {}
-                  }
-                  transition={{ duration: 1, repeat: Infinity, ease: 'easeInOut' }}
-                  aria-hidden="true"
-                />
-                {stateLabels[orbState]}
+                {status !== 'idle' && (
+                  <motion.span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      status === 'playing' ? 'bg-sky-400' : status === 'processing' ? 'bg-purple-400' : 'bg-emerald'
+                    }`}
+                    animate={!reduce ? { opacity: [1, 0.3, 1] } : {}}
+                    transition={{ duration: 1, repeat: Infinity }}
+                    aria-hidden="true"
+                  />
+                )}
+                {toolActivity ?? statusLabels[status]}
               </motion.div>
             </AnimatePresence>
 
@@ -192,125 +185,246 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
               className="h-7 w-7 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-surface-hi transition-colors"
               aria-label="Cerrar sesión"
             >
-              <LogOut size={14} aria-hidden="true" />
+              <LogOut size={14} />
             </button>
           </div>
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="relative flex-1 overflow-y-auto" style={{ zIndex: 1 }} aria-label="Panel del asistente SATI">
-        <div className="max-w-4xl mx-auto px-6 py-8 flex flex-col items-center gap-8 min-h-full">
+      {/* Main */}
+      <main className="relative flex-1 overflow-hidden" style={{ zIndex: 1 }}>
 
-          {/* Orb stage */}
-          <div className="flex flex-col items-center gap-5 pt-2">
-            <div className="relative">
-              {/* Inner orb glow (pulsing) */}
+        {/* ── EMPTY STATE ───────────────────────────────────────────────── */}
+        <AnimatePresence>
+          {layout === 'empty' && (
+            <motion.div
+              key="empty"
+              initial={false}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="absolute inset-0 flex flex-col items-center justify-center gap-5 pointer-events-none"
+              aria-label="Estado inicial"
+            >
               <motion.div
-                className="absolute rounded-full pointer-events-none"
-                style={{
-                  inset: '-45%',
-                  filter: 'blur(50px)',
-                }}
-                animate={prefersReducedMotion ? {} : {
-                  opacity: orbState === 'idle' ? [0.12, 0.20, 0.12] : [0.22, 0.38, 0.22],
-                  scale: orbState === 'speaking' ? [1, 1.1, 1] : [1, 1.05, 1],
-                  background: `radial-gradient(circle, ${glowColor} 0%, transparent 65%)`,
-                }}
-                transition={{
-                  opacity: { duration: orbState === 'listening' ? 0.6 : 3, repeat: Infinity, ease: 'easeInOut' },
-                  scale: { duration: orbState === 'speaking' ? 0.9 : 3, repeat: Infinity, ease: 'easeInOut' },
-                  background: { duration: 0.9, ease: 'easeInOut' },
-                }}
-                initial={false}
-              />
-              <Orb state={orbState} size={260} />
-            </div>
-
-            {/* State label */}
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={`label-${orbState}-${displayText ? 'has-text' : 'no-text'}`}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="text-sm text-muted text-center"
+                animate={!reduce ? { scale: [1, 1.04, 1], opacity: [0.6, 0.9, 0.6] } : {}}
+                transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+                className="flex flex-col items-center gap-3"
               >
-                {orbState === 'idle' && !displayText
-                  ? 'Pregunta en voz o escribe tu consulta fiscal'
-                  : stateLabels[orbState]}
-              </motion.p>
-            </AnimatePresence>
-          </div>
-
-          {/* Typewriter response */}
-          <AnimatePresence>
-            {displayText && (
-              <motion.div
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                className="max-w-lg w-full"
-                aria-live="polite"
-                aria-label="Respuesta del asistente"
-              >
-                <div className="bg-surface/80 backdrop-blur-sm border border-border rounded-2xl px-5 py-4">
-                  <p className={`text-sm text-ink leading-relaxed ${orbState === 'speaking' ? 'typewriter-cursor' : ''}`}>
-                    {displayText}
-                  </p>
+                <div className="w-12 h-12 rounded-full border border-border flex items-center justify-center">
+                  <Mic size={20} className="text-subtle" />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-medium text-muted">Presiona Espacio para hablar con SATI</p>
+                  <p className="text-xs text-subtle mt-1">o escribe tu consulta fiscal abajo</p>
                 </div>
               </motion.div>
-            )}
-          </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-          {/* Tax data cards */}
-          <AnimatePresence>
-            {showCards && (
+        {/* ── ACTIVE / SPLIT LAYOUT ─────────────────────────────────────── */}
+        <AnimatePresence>
+          {layout !== 'empty' && (
+            <motion.div
+              key="main-layout"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3 }}
+              className={`h-full flex ${layout === 'split' ? 'flex-row' : 'flex-col items-center justify-center'}`}
+            >
+              {/* Orb panel */}
               <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-                className="w-full"
-              >
-                {csf && <CsfCard csf={csf} />}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Dev state controls */}
-          <div className="flex gap-2 flex-wrap justify-center mt-auto pt-4 pb-28">
-            <p className="w-full text-center text-xs text-subtle mb-1">Simular estado del orbe:</p>
-            {(['idle', 'listening', 'thinking', 'speaking'] as OrbState[]).map((s) => (
-              <motion.button
-                key={s}
-                type="button"
-                onClick={() => { setOrbState(s); setIsProcessing(false); }}
-                className={`h-7 px-3 rounded-full text-xs border transition-colors ${
-                  orbState === s
-                    ? 'border-emerald text-emerald bg-emerald-lo'
-                    : 'border-border text-muted hover:text-ink hover:border-ink/30'
+                layout={!reduce}
+                className={`flex flex-col items-center justify-center shrink-0 ${
+                  layout === 'split' ? 'w-48 border-r border-border py-8 gap-3' : 'gap-5'
                 }`}
-                whileTap={{ scale: 0.95 }}
-                transition={{ duration: 0.1 }}
+                transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
               >
-                {s}
-              </motion.button>
-            ))}
-          </div>
-        </div>
+                {/* Orb */}
+                <motion.div
+                  layout={!reduce}
+                  className="relative cursor-pointer"
+                  onClick={handleMicClick}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => e.key === 'Enter' && handleMicClick()}
+                  aria-label={sessionActive ? 'Terminar conversación' : 'Iniciar conversación'}
+                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <motion.div
+                    className="absolute rounded-full pointer-events-none"
+                    style={{ inset: '-55%', filter: 'blur(64px)' }}
+                    animate={{
+                      background: `radial-gradient(circle, ${glow} 0%, transparent 65%)`,
+                      opacity: status === 'idle' ? [0.12, 0.2, 0.12] : [0.28, 0.48, 0.28],
+                      scale: status === 'speech' ? [1, 1.18, 1] : [1, 1.06, 1],
+                    }}
+                    transition={{ duration: status === 'speech' ? 0.9 : 3.0, repeat: Infinity }}
+                  />
+                  <motion.div
+                    layout={!reduce}
+                    animate={{ width: orbSize, height: orbSize }}
+                    transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                  >
+                    <Orb state={orbState} size={orbSize} />
+                  </motion.div>
+                </motion.div>
+
+                {/* State label */}
+                <AnimatePresence mode="wait">
+                  <motion.p
+                    key={status}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.2 }}
+                    className={`text-xs text-muted text-center ${layout === 'split' ? '' : 'text-sm'}`}
+                  >
+                    {sessionActive ? statusLabels[status] : 'Toca para hablar'}
+                  </motion.p>
+                </AnimatePresence>
+
+                {/* End session hint */}
+                <AnimatePresence>
+                  {sessionActive && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -2 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className="flex items-center gap-1 text-[10px] text-subtle/50"
+                    >
+                      <MicOff size={9} />
+                      toca para terminar
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+
+              {/* Content panel (visible in split mode) */}
+              <AnimatePresence>
+                {layout === 'split' && (
+                  <motion.div
+                    key="content-panel"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
+                    className="flex-1 overflow-y-auto px-6 py-6 pb-28 flex flex-col gap-5"
+                  >
+                    {/* Tool activity indicator */}
+                    <AnimatePresence>
+                      {toolActivity && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0 }}
+                          className="flex items-center gap-2 text-xs text-purple-300"
+                        >
+                          <motion.span
+                            className="w-1.5 h-1.5 rounded-full bg-purple-400"
+                            animate={{ opacity: [1, 0.3, 1] }}
+                            transition={{ duration: 0.8, repeat: Infinity }}
+                          />
+                          {toolActivity}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Streaming text */}
+                    <AnimatePresence>
+                      {streamText && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="bg-surface/80 backdrop-blur-sm border border-border rounded-2xl px-5 py-4"
+                          aria-live="polite"
+                        >
+                          <Markdown streaming>{streamText}</Markdown>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Last assistant message (once stream is done) */}
+                    {!streamText && messages.length > 0 && (() => {
+                      const last = messages[messages.length - 1];
+                      if (last?.role === 'assistant') {
+                        return (
+                          <div className="bg-surface/80 border border-border rounded-2xl px-5 py-4">
+                            <Markdown>{last.content}</Markdown>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Dynamic skill result card */}
+                    <AnimatePresence>
+                      {skillResult && (
+                        <motion.div
+                          key={skillResult.skill}
+                          initial={{ opacity: 0, y: 14 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                        >
+                          <SkillCard result={skillResult} />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Error */}
+                    <AnimatePresence>
+                      {error && (
+                        <motion.p
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="text-xs text-red-400 bg-red-950/30 border border-red-900/40 rounded-xl px-4 py-3"
+                          role="alert"
+                        >
+                          {error}
+                        </motion.p>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Orb-only transcript (active state, no split yet) */}
+              {layout === 'active' && (messages.length > 0 || streamText) && (
+                <div className="mt-4 w-full max-w-xs flex flex-col gap-1.5 pointer-events-none px-4">
+                  {messages.slice(-3).map((msg, i) => (
+                    <motion.div
+                      key={`${i}-${msg.role}`}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`text-xs rounded-xl px-3 py-2 leading-relaxed ${
+                        msg.role === 'user'
+                          ? 'bg-emerald/10 text-ink/80 self-end border border-emerald/15 max-w-[88%]'
+                          : 'bg-surface text-muted border border-border self-start max-w-[92%]'
+                      }`}
+                    >
+                      {msg.role === 'assistant' ? <Markdown>{msg.content}</Markdown> : msg.content}
+                    </motion.div>
+                  ))}
+                  {streamText && (
+                    <div className="text-xs rounded-xl px-3 py-2 leading-relaxed bg-surface text-muted border border-border self-start max-w-[92%]">
+                      {streamText}
+                      <span className="inline-block w-0.5 h-3 bg-emerald/60 ml-0.5 align-text-bottom animate-pulse" />
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
       {/* Floating command bar */}
-      <div
-        className="relative shrink-0 pb-6 px-6"
-        style={{ zIndex: 10 }}
-        role="region"
-        aria-label="Barra de comandos"
-      >
-        {/* Bar fade mask */}
+      <div className="relative shrink-0 pb-6 px-6" style={{ zIndex: 10 }} role="region" aria-label="Barra de comandos">
         <div
           className="absolute bottom-full left-0 right-0 h-20 pointer-events-none"
           style={{ background: 'linear-gradient(to top, var(--color-bg), transparent)' }}
@@ -319,53 +433,48 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
 
         <form
           onSubmit={handleSend}
-          className="command-bar max-w-2xl mx-auto flex items-center gap-3 bg-surface/90 backdrop-blur-md border border-border rounded-full px-4 py-2.5 transition-[border-color,box-shadow] duration-200"
+          className="max-w-2xl mx-auto flex items-center gap-3 bg-surface/90 backdrop-blur-md border border-border rounded-full px-4 py-2.5 transition-[border-color] duration-200 focus-within:border-emerald/40"
         >
-          {/* Mic */}
           <motion.button
             type="button"
-            onClick={handleMic}
-            disabled={isProcessing && !micActive}
-            aria-label={micActive ? 'Detener micrófono' : 'Activar micrófono'}
-            aria-pressed={micActive}
+            onClick={handleMicClick}
+            aria-label={sessionActive ? 'Detener micrófono' : 'Activar micrófono'}
+            aria-pressed={sessionActive}
             className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
-              micActive
-                ? 'bg-emerald text-bg'
-                : 'bg-surface-hi text-muted hover:text-ink hover:bg-border'
+              sessionActive ? 'bg-emerald text-bg' : 'bg-surface-hi text-muted hover:text-ink hover:bg-border'
             }`}
             whileTap={{ scale: 0.9 }}
             transition={{ duration: 0.12 }}
           >
-            {micActive
-              ? <MicOff size={18} aria-hidden="true" />
-              : <Mic size={18} aria-hidden="true" />
-            }
+            {sessionActive ? <MicOff size={18} /> : <Mic size={18} />}
           </motion.button>
 
-          {/* Input */}
           <input
             ref={inputRef}
             type="text"
             value={inputText}
             onChange={e => setInputText(e.target.value)}
             placeholder="Escribe tu consulta fiscal…"
-            disabled={isProcessing}
+            disabled={status === 'processing'}
             className="flex-1 bg-transparent text-sm text-ink placeholder:text-subtle focus:outline-none disabled:opacity-50"
             aria-label="Consulta al asistente"
           />
 
-          {/* Send */}
           <motion.button
             type="submit"
-            disabled={!inputText.trim() || isProcessing}
+            disabled={!inputText.trim() || status === 'processing'}
             aria-label="Enviar consulta"
             className="shrink-0 w-9 h-9 rounded-full bg-emerald flex items-center justify-center text-bg hover:opacity-90 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
             whileTap={{ scale: 0.88 }}
             transition={{ duration: 0.12 }}
           >
-            <Send size={14} aria-hidden="true" />
+            <Send size={14} />
           </motion.button>
         </form>
+
+        <p className="text-center text-[10px] text-subtle mt-2 select-none">
+          Espacio para hablar · Esc para terminar
+        </p>
       </div>
     </div>
   );
