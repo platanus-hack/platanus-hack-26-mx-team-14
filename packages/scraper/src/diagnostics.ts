@@ -2,24 +2,10 @@ import { childLogger } from "@sat/shared";
 import type { Session } from "./types.js";
 import { storeArtifact } from "./artifacts.js";
 
-/** In-page expression: list interactive elements as a JSON string (DOM-type-free). */
-const FIELDS_EXPR = `JSON.stringify(
-  Array.from(document.querySelectorAll('input, button, select, textarea, a[href]')).map(function (e) {
-    return {
-      tag: e.tagName.toLowerCase(),
-      id: e.id || undefined,
-      name: e.name || undefined,
-      type: e.type || undefined,
-      ph: e.placeholder || undefined,
-      text: (e.textContent || '').trim().slice(0, 50) || undefined,
-    };
-  })
-)`;
-
 /**
  * On a flow failure, capture the current page so unknown (authenticated) selectors
- * can be fixed without guessing: screenshot + full HTML + interactive-field dump,
- * all written to ARTIFACTS_DIR and logged. Never throws.
+ * can be fixed without guessing: screenshot + full HTML, written to ARTIFACTS_DIR
+ * and logged (paths only — the field list lives in the HTML). Never throws.
  */
 export async function dumpFailure(
   session: Session,
@@ -38,26 +24,17 @@ export async function dumpFailure(
       ? await storeArtifact("html", Buffer.from(html, "utf8"), { correlationId, label: `fail-${label}` })
       : null;
 
-    const fields = await session.evaluate<string>(FIELDS_EXPR).catch(() => "[]");
-
+    // The full DOM is in the saved HTML artifact — don't flood the logs with the
+    // field list; grep the HTML file when you need selectors.
     log.warn(
       {
         url: session.url(),
         screenshot: shot?.url,
         html: htmlArt?.url,
-        fields: safeParse(fields),
       },
-      `📸 page dump on failure (${label}) — fix selectors in sat.ts from these fields`,
+      `📸 page dump on failure (${label}) — abre el HTML/screenshot para depurar`,
     );
   } catch (e) {
     log.warn({ err: (e as Error).message }, "dumpFailure could not capture page");
-  }
-}
-
-function safeParse(s: string): unknown {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return s.slice(0, 1000);
   }
 }

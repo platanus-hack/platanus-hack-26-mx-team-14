@@ -18,7 +18,7 @@ export function csfToText(csf: CSF): string {
     .join("; ");
   return (
     `Constancia de Situación Fiscal de ${csf.nombre} (${csf.rfc}). ` +
-    `Régimen(es): ${csf.regimenFiscal.join(", ")}. ` +
+    `Régimen(es): ${csf.regimenFiscal.map((r) => (r.porcentaje != null ? `${r.nombre} (${r.porcentaje}%)` : r.nombre)).join(", ")}. ` +
     `Domicilio CP ${csf.domicilioFiscal.codigoPostal}. Obligaciones: ${obl || "—"}.`
   );
 }

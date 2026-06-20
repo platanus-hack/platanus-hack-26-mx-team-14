@@ -10,8 +10,8 @@ export const csfFixture: CSF = {
   rfc: 'PEMJ900315H40',
   nombre: 'JUAN CARLOS PÉREZ MARTÍNEZ',
   regimenFiscal: [
-    'Régimen de Sueldos y Salarios e Ingresos Asimilados a Salarios',
-    'Régimen Simplificado de Confianza',
+    { nombre: 'Régimen de Sueldos y Salarios e Ingresos Asimilados a Salarios', porcentaje: 60 },
+    { nombre: 'Régimen Simplificado de Confianza', porcentaje: 40 },
   ],
   domicilioFiscal: {
     codigoPostal: '03100',

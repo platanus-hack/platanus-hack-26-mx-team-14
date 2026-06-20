@@ -29,6 +29,14 @@ export class AuthError extends AppError {
   }
 }
 
+export class ValidationError extends AppError {
+  constructor(message: string, meta?: Record<string, unknown>) {
+    // Bad input (e.g. CFDI rule violations) — not retryable; surface to the user
+    // so they fix the data instead of hammering the SAT with an invalid invoice.
+    super("validation_failed", message, { retryable: false, meta });
+  }
+}
+
 export class ScrapeError extends AppError {
   constructor(message: string, opts: { retryable?: boolean; step?: string; meta?: Record<string, unknown> } = {}) {
     super("scrape_failed", message, {

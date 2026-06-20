@@ -35,6 +35,10 @@ export interface Session {
 
   innerText(selector: string): Promise<string>;
   getAttribute(selector: string, attr: string): Promise<string | null>;
+  /** Runtime `.value` of an <input>/<select> (works with Playwright `:visible`, unlike evaluate). */
+  inputValue(selector: string): Promise<string>;
+  /** True only if visible AND enabled AND editable (false for disabled/readonly/hidden). */
+  isEditable(selector: string): Promise<boolean>;
   exists(selector: string): Promise<boolean>;
 
   /** Screenshot of the page or a single element (used to feed captchas to Claude). */

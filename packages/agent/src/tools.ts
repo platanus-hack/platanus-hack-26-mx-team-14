@@ -40,7 +40,7 @@ export const tools: Anthropic.Tool[] = [
     name: "generateCSF",
     description:
       "Download the user's Constancia de Situación Fiscal (CSF) and extract its " +
-      "fields (régimen, domicilio, obligaciones). Use to learn the user's fiscal profile.",
+      "fields (régimen, domicilio, obligaciones, distribución de régimen en caso de tener varios). Use to learn the user's fiscal profile. In general we want to give useful information to the user about their fiscal situation",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
   {

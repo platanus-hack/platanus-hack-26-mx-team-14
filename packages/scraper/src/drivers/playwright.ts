@@ -94,6 +94,16 @@ class PlaywrightSession implements Session {
   async getAttribute(selector: string, attr: string): Promise<string | null> {
     return this.page.getAttribute(selector, attr);
   }
+  async inputValue(selector: string): Promise<string> {
+    return this.page.locator(selector).first().inputValue();
+  }
+  async isEditable(selector: string): Promise<boolean> {
+    return this.page
+      .locator(selector)
+      .first()
+      .isEditable({ timeout: 2000 })
+      .catch(() => false);
+  }
   async exists(selector: string): Promise<boolean> {
     return (await this.page.locator(selector).count()) > 0;
   }

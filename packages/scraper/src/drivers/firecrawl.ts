@@ -139,6 +139,16 @@ class FirecrawlSession implements Session {
       `return await page.getAttribute(${JSON.stringify(selector)}, ${JSON.stringify(attr)});`,
     );
   }
+  async inputValue(selector: string): Promise<string> {
+    return this.exec<string>(
+      `return await page.locator(${JSON.stringify(selector)}).first().inputValue();`,
+    );
+  }
+  async isEditable(selector: string): Promise<boolean> {
+    return this.exec<boolean>(
+      `try { return await page.locator(${JSON.stringify(selector)}).first().isEditable({ timeout: 2000 }); } catch { return false; }`,
+    );
+  }
   async exists(selector: string): Promise<boolean> {
     return this.exec<boolean>(
       `return (await page.locator(${JSON.stringify(selector)}).count()) > 0;`,

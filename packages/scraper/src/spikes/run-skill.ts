@@ -61,12 +61,13 @@ async function main() {
       ? {}
       : skill === "generateInvoice"
         ? {
-            // Preview-only smoke test (confirmed=false → never emits).
-            // Receptor = público en general (XAXX010101000) so it resolves via
-            // "Cliente Frecuente"; régimen 616 / uso S01 is the público-general combo.
+            // Preview-only smoke test (confirmed=false → never emits). Matches a
+            // manually-verified valid CFDI: receptor genérico XAXX010101000 con Nombre
+            // "FACTURA GLOBAL" (NO "PUBLICO EN GENERAL") ⇒ es una factura normal y NO
+            // requiere InformacionGlobal. Régimen 616 / uso S01 / objeto 02 (con IVA).
             receptor: {
               rfc: process.env.SAT_RECEPTOR_RFC ?? "XAXX010101000",
-              nombreRazonSocial: "PUBLICO EN GENERAL",
+              nombreRazonSocial: "FACTURA GLOBAL",
               codigoPostal: process.env.SAT_RECEPTOR_CP ?? "11800",
               regimenFiscalReceptor: "616",
               usoCFDI: "S01",
@@ -78,7 +79,8 @@ async function main() {
                 descripcion: "Prueba",
                 claveUnidad: "H87",
                 cantidad: 1,
-                valorUnitario: 100,
+                valorUnitario: 11600,
+                objetoImpuesto: "02", // Sí objeto de impuesto (con IVA 16%)
               },
             ],
             confirmed: false,

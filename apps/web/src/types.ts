@@ -13,10 +13,15 @@ export interface Obligacion {
   vencimiento?: string;
 }
 
+export interface RegimenCsf {
+  nombre: string;
+  porcentaje?: number;
+}
+
 export interface CSF {
   rfc: string;
   nombre: string;
-  regimenFiscal: string[];
+  regimenFiscal: RegimenCsf[];
   domicilioFiscal: {
     codigoPostal: string;
     entidad?: string;
