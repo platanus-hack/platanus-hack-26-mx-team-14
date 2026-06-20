@@ -22,6 +22,17 @@ export class PlaywrightDriver implements BrowserDriver {
     this.browser = await chromium.launch({
       headless: !headed,
       slowMo: headed ? 250 : 0,
+      args: [
+        "--no-sandbox",               // required in Docker (no user namespace)
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",    // /dev/shm is 64 MB in Docker → crashes without this
+        "--disable-gpu",              // no GPU in headless containers
+        "--disable-extensions",
+        "--disable-background-networking",
+        "--disable-default-apps",
+        "--no-first-run",
+        "--no-zygote",                // reduces child process overhead in constrained envs
+      ],
     });
     return this.browser;
   }
