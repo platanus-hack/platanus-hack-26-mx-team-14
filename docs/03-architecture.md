@@ -7,7 +7,7 @@ decoupled from the fast/interactive parts (voice + UI).
 ## 3.1 Components
 
 ```
-┌─────────────────────── Client ("page" frontend) ──────────────────────┐
+┌───────────────────────── Client (frontend) ───────────────────────────┐
 │  Login · Upload .cer/.key · Voice (ElevenLabs/Whisper) · Dynamic UI    │
 │  RAG client panel · Custom report/UI per régimen · SSE agent stream    │
 └───────────────┬───────────────────────────────────────────────────────┘
@@ -101,4 +101,4 @@ decoupled from the fast/interactive parts (voice + UI).
   queue + event pair.
 - **emit `<E>()` / Agent caller / Claude model / Response normalization** → `apps/api` + `packages/agent`.
 - **DB: pgvector + credentials** → `packages/db` (`documents`, `credentials`).
-- **Client: Login / Append .cer/.key / Render custom report-UI / RAG client** → the `page` frontend (docker-compose `web` service, :3001).
+- **Client: Login / Append .cer/.key / Render custom report-UI / RAG client** → the `frontend` app (docker-compose `frontend` service, :3001).

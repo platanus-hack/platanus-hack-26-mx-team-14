@@ -43,7 +43,7 @@ AI + voice SDKs we want are all first-class in TS. So the entire stack is
 ├── apps/
 │   ├── api/            # Fastify HTTP + SSE, publishes events, agent loop, voice webhook   [:3000]
 │   ├── worker/         # BullMQ workers: runs Brisk Camel flows, normalizes, embeds
-│   └── web/            # Frontend ("page" app): login, .cer/.key upload, dynamic UI, voice  [:3001]
+│   └── frontend/       # Frontend (Next.js): login, .cer/.key upload, dynamic UI, voice  [:3001]
 ├── packages/
 │   ├── scraper/        # "Brisk Camel": BrowserDriver (Firecrawl/Playwright) + captcha + flows
 │   ├── agent/          # Claude tool definitions (the skills) + 529/overload resilience
@@ -52,12 +52,12 @@ AI + voice SDKs we want are all first-class in TS. So the entire stack is
 │   ├── db/             # Drizzle schema, migrations, query helpers (incl. pgvector)
 │   ├── rag/            # Voyage embeddings + retrieval text builders
 │   └── shared/         # Config, logging, crypto, errors, ids
-├── infra/              # redis.conf + dev Dockerfiles (api/worker/web)
+├── infra/              # redis.conf + dev Dockerfiles (api/worker/frontend)
 └── docs/
 ```
 
-> The frontend is referred to as the **`page`** app (docker-compose `web` service,
-> port 3001) and is owned outside the backend scaffold.
+> The **`frontend`** app (docker-compose `frontend` service, port 3001) is owned
+> outside the backend scaffold and not built here yet.
 
 Why this split: the **scraper** and **agent** are pure libraries with no I/O
 opinions, so they're testable in isolation and reusable by both `api` and
