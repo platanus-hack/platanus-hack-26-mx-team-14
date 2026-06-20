@@ -1,4 +1,5 @@
 import { useState, type SyntheticEvent } from 'react';
+import owlLogo from '../assets/owl-logo.png';
 import { Eye, EyeOff, ArrowLeft, ArrowRight, Lock, Mail, User, ShieldCheck, FileSearch, Calculator } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import PasswordStrength from '../components/PasswordStrength';
@@ -134,9 +135,7 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
               className="flex items-center gap-2 group"
               aria-label="Volver al inicio"
             >
-              <span className="w-7 h-7 rounded-lg bg-emerald flex items-center justify-center text-bg text-sm font-bold group-hover:opacity-85 transition-opacity">
-                S
-              </span>
+              <img src={owlLogo} alt="" aria-hidden="true" className="w-7 h-7 rounded-full object-cover group-hover:opacity-85 transition-opacity" style={{ objectPosition: 'center 18%' }} />
               <span className="font-semibold text-ink tracking-tight">SATI</span>
             </button>
           </div>
@@ -192,7 +191,7 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
               aria-label="Volver al inicio"
             >
               <ArrowLeft size={15} aria-hidden="true" />
-              <span className="w-5 h-5 rounded bg-emerald flex items-center justify-center text-bg font-bold text-xs" aria-hidden="true">S</span>
+              <img src={owlLogo} alt="" aria-hidden="true" className="w-5 h-5 rounded-full object-cover" style={{ objectPosition: 'center 18%' }} />
               <span className="font-semibold text-ink">SATI</span>
             </button>
           </div>
