@@ -7,7 +7,7 @@ RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 
 WORKDIR /app
 
-# sharp prebuilt binaries dependencies
+# sharp prebuilt binary deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 libexpat1 && \
     rm -rf /var/lib/apt/lists/*
@@ -17,9 +17,9 @@ COPY packages ./packages
 COPY apps/worker ./apps/worker
 
 RUN pnpm install --frozen-lockfile
-# Ensure sharp native bindings are built for this platform
 RUN pnpm --filter @sat/scraper rebuild sharp 2>/dev/null || true
-# Verify Chromium is present for this playwright version
-RUN npx playwright install chromium --with-deps 2>/dev/null || true
 
-CMD ["pnpm", "--filter", "@sat/worker", "start"]
+# Compile TypeScript → JS bundle (no tsx overhead at runtime, ~100MB saved)
+RUN pnpm --filter @sat/worker build
+
+CMD ["node", "apps/worker/dist/index.js"]

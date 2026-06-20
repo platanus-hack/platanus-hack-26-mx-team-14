@@ -13,5 +13,8 @@ COPY apps/api ./apps/api
 
 RUN pnpm install --frozen-lockfile
 
+# Compile TypeScript → JS bundle (no tsx overhead at runtime)
+RUN pnpm --filter @sat/api build
+
 EXPOSE 3000
-CMD ["pnpm", "--filter", "@sat/api", "start"]
+CMD ["node", "apps/api/dist/index.js"]
