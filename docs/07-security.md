@@ -81,5 +81,5 @@ flow so private-key material never leaves our infra.
 ## 7.10 Hackathon → production gap (known)
 
 For the demo we accept: env-injected master key (vs. real KMS), single workspace,
-demo-grade auth on `apps/web`, and credentials transiting Firecrawl (§7.9).
+demo-grade auth on the `page` frontend, and credentials transiting Firecrawl (§7.9).
 Documented here so each is a deliberate, visible trade-off rather than an oversight.

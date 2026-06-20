@@ -41,18 +41,23 @@ AI + voice SDKs we want are all first-class in TS. So the entire stack is
 ```
 .
 ├── apps/
-│   ├── api/            # Fastify HTTP + SSE, publishes events, serves the agent
+│   ├── api/            # Fastify HTTP + SSE, publishes events, agent loop, voice webhook   [:3000]
 │   ├── worker/         # BullMQ workers: runs Brisk Camel flows, normalizes, embeds
-│   └── web/            # Next.js — login, .cer/.key upload, dynamic UI, RAG client, voice
+│   └── web/            # Frontend ("page" app): login, .cer/.key upload, dynamic UI, voice  [:3001]
 ├── packages/
-│   ├── scraper/        # "Brisk Camel": Playwright flows + captcha solver + session mgr
-│   ├── agent/          # Claude agent loop + tool definitions (the skills)
-│   ├── events/         # Event names, Zod schemas, typed publish/subscribe helpers
+│   ├── scraper/        # "Brisk Camel": BrowserDriver (Firecrawl/Playwright) + captcha + flows
+│   ├── agent/          # Claude tool definitions (the skills) + 529/overload resilience
+│   ├── voice/          # Provider-agnostic voice layer (Vapi + ElevenLabs adapters)
+│   ├── events/         # Event names, Zod schemas, credential/skill/result contracts
 │   ├── db/             # Drizzle schema, migrations, query helpers (incl. pgvector)
-│   ├── rag/            # Embedding + retrieval + recommendation prompts
-│   └── shared/         # Types, config, logging, crypto, errors
+│   ├── rag/            # Voyage embeddings + retrieval text builders
+│   └── shared/         # Config, logging, crypto, errors, ids
+├── infra/              # redis.conf + dev Dockerfiles (api/worker/web)
 └── docs/
 ```
+
+> The frontend is referred to as the **`page`** app (docker-compose `web` service,
+> port 3001) and is owned outside the backend scaffold.
 
 Why this split: the **scraper** and **agent** are pure libraries with no I/O
 opinions, so they're testable in isolation and reusable by both `api` and
