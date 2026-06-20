@@ -27,7 +27,7 @@ export async function publicLlmRoutes(app: FastifyInstance) {
   const anthropic = env.ANTHROPIC_API_KEY ? makeAnthropic(env.ANTHROPIC_API_KEY) : null;
 
   app.post<{ Body: { messages: OpenAIMessage[]; stream?: boolean } }>(
-    "/public/voice/llm",
+    "/public/voice/llm/chat/completions",
     async (req, reply) => {
       if (!anthropic) {
         return reply.code(503).send({ error: "IA no disponible" });

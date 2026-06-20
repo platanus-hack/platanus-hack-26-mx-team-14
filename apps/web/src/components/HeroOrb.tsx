@@ -383,7 +383,9 @@ export default function HeroOrb() {
   async function doStartSession() {
     setError('');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
+      });
       streamRef.current = stream;
       mimeTypeRef.current = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus' : 'audio/webm';
@@ -391,6 +393,7 @@ export default function HeroOrb() {
       vadRef.current = new VAD(
         stream,
         // onSpeechStart — VAD detected someone talking
+        // threshold 22 (era 13): evita que música de fondo active el micrófono
         () => {
           const s = statusRef.current;
           if (s === 'ready') {
@@ -405,6 +408,7 @@ export default function HeroOrb() {
         () => {
           if (statusRef.current === 'speech') doSendRecording();
         },
+        1600, 22, 250,
       );
 
       setS('ready');
