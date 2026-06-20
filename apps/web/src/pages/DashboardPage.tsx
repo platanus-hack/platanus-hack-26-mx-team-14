@@ -3,23 +3,15 @@ import { Mic, Send, LogOut, MicOff } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import Orb from '../components/Orb';
 import owlLogo from '../assets/owl-logo.png';
-import TaxDataCard from '../components/TaxDataCard';
-import type { OrbState, Page } from '../types';
+import CsfCard from '../components/CsfCard';
+import { getCSF } from '../data/csf';
+import { csfSummary } from '../lib/obligaciones';
+import type { OrbState, Page, CSF } from '../types';
 
 interface DashboardPageProps {
   onNavigate: (page: Page) => void;
   onLogout?: () => void;
 }
-
-const MOCK_RESPONSE = 'Hola, analicé tus facturas vigentes del SAT. Tienes un IVA a favor de $4,500 MXN este mes y un ISR estimado de $2,100 MXN.';
-
-const MOCK_TAX = { ivaFavor: 4500, isrEstimado: 2100, month: 'Junio 2026' };
-
-const MOCK_INVOICES = [
-  { id: 'CFDI-2026-047', description: 'Servicios de diseño web', amount: 15000, date: '22/06' },
-  { id: 'CFDI-2026-046', description: 'Consultoría UX/UI', amount: 8500, date: '18/06' },
-  { id: 'CFDI-2026-045', description: 'Mantenimiento app móvil', amount: 6000, date: '15/06' },
-];
 
 const orbGlowColor: Record<OrbState, string> = {
   idle:      'oklch(0.55 0.16 230)',
@@ -57,6 +49,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
   const [showCards, setShowCards] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [micActive, setMicActive] = useState(false);
+  const [csf, setCsf] = useState<CSF | null>(null);
   const typewriterRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -87,15 +80,16 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
       setOrbState('thinking');
       setTimeout(() => {
         setOrbState('speaking');
-        typeText(MOCK_RESPONSE);
+        const reply = csf ? csfSummary(csf) : 'Aquí está tu información fiscal.';
+        typeText(reply);
         setTimeout(() => {
           setOrbState('idle');
           setIsProcessing(false);
           setMicActive(false);
-        }, MOCK_RESPONSE.length * 28 + 1200);
+        }, reply.length * 28 + 1200);
       }, 2000);
     }, 900);
-  }, [isProcessing, typeText]);
+  }, [isProcessing, typeText, csf]);
 
   function handleSend(e: SyntheticEvent) {
     e.preventDefault();
@@ -110,6 +104,11 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
     setInputText('');
     runOrbSequence();
   }
+
+  // Load the CSF. TODAY: fixture (real shape). LATER: getCSF() hits the API.
+  useEffect(() => {
+    getCSF().then(setCsf).catch(() => setCsf(null));
+  }, []);
 
   useEffect(() => {
     return () => { if (typewriterRef.current) clearTimeout(typewriterRef.current); };
@@ -276,7 +275,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                 transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
                 className="w-full"
               >
-                <TaxDataCard tax={MOCK_TAX} invoices={MOCK_INVOICES} />
+                {csf && <CsfCard csf={csf} />}
               </motion.div>
             )}
           </AnimatePresence>
