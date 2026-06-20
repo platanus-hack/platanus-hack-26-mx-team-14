@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "gsd": {
+      "source": "ctsstc/get-shit-done-skills",
+      "sourceType": "github",
+      "skillPath": ".kilocode/skills/gsd/SKILL.md",
+      "computedHash": "d600a82e62d25a86ce0b5d114183650abf66ad842d112f63852c0dd9d7d90bcf"
+    }
+  }
+}

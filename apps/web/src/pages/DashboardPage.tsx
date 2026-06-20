@@ -8,6 +8,7 @@ import type { OrbState, Page } from '../types';
 
 interface DashboardPageProps {
   onNavigate: (page: Page) => void;
+  onLogout?: () => void;
 }
 
 const MOCK_RESPONSE = 'Hola, analicé tus facturas vigentes del SAT. Tienes un IVA a favor de $4,500 MXN este mes y un ISR estimado de $2,100 MXN.';
@@ -48,7 +49,7 @@ const stateDot: Record<OrbState, string> = {
   speaking:  'bg-sky-400',
 };
 
-export default function DashboardPage({ onNavigate }: DashboardPageProps) {
+export default function DashboardPage({ onNavigate, onLogout }: DashboardPageProps) {
   const prefersReducedMotion = useReducedMotion();
   const [orbState, setOrbState] = useState<OrbState>('idle');
   const [inputText, setInputText] = useState('');
@@ -188,7 +189,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
 
             <button
               type="button"
-              onClick={() => onNavigate('landing')}
+              onClick={() => onLogout ? onLogout() : onNavigate('landing')}
               className="h-7 w-7 flex items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-surface-hi transition-colors"
               aria-label="Cerrar sesión"
             >

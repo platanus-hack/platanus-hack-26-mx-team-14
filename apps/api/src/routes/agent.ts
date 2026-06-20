@@ -1,3 +1,4 @@
+import "../types.js";
 import type { FastifyInstance } from "fastify";
 import type Anthropic from "@anthropic-ai/sdk";
 import { env, idempotencyKey, uuid } from "@sat/shared";
@@ -16,16 +17,14 @@ export async function agentRoutes(app: FastifyInstance) {
   // Client tuned for outages: SDK retries 429/500/529 with backoff (maxRetries: 5).
   const anthropic = env.ANTHROPIC_API_KEY ? makeAnthropic(env.ANTHROPIC_API_KEY) : null;
 
-  app.post("/agent/turn", async (req, reply) => {
+  app.post("/agent/turn", { onRequest: [app.authenticate] }, async (req, reply) => {
     if (!anthropic) return reply.code(500).send({ error: "ANTHROPIC_API_KEY not set" });
+    const { userId, credentialId, rfc } = req.user;
     const b = req.body as {
-      userId: string;
-      credentialId: string;
-      rfc: string;
       messages: Anthropic.MessageParam[];
     };
 
-    const messages = [...b.messages];
+    const messages = [...(b.messages ?? [])];
     try {
       for (let i = 0; i < 6; i++) {
         // Resilient call: retries (SDK) → fallback to Sonnet on overload (helper).
@@ -56,9 +55,9 @@ export async function agentRoutes(app: FastifyInstance) {
             skill: block.name as SkillName,
             correlationId,
             idempotencyKey: idempotencyKey({ s: block.name, ...(block.input as object), c: correlationId }),
-            userId: b.userId,
-            credentialId: b.credentialId,
-            rfc: b.rfc,
+            userId: userId ?? "",
+            credentialId: credentialId ?? "",
+            rfc: rfc ?? "",
             input: block.input as Record<string, unknown>,
           };
           try {
