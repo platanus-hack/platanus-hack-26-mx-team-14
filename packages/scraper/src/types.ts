@@ -45,7 +45,7 @@ export interface Session {
   screenshot(selector?: string): Promise<Buffer>;
 
   /** Run `trigger`, capture the file download it produces (PDF/XML). */
-  captureDownload(trigger: () => Promise<void>): Promise<Download>;
+  captureDownload(trigger: () => Promise<void>, timeoutMs?: number): Promise<Download>;
 
   /** Arbitrary JS in page context. */
   evaluate<T>(expression: string): Promise<T>;

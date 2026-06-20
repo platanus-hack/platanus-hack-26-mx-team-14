@@ -111,9 +111,9 @@ class PlaywrightSession implements Session {
     if (selector) return this.page.locator(selector).first().screenshot();
     return this.page.screenshot();
   }
-  async captureDownload(trigger: () => Promise<void>): Promise<Download> {
+  async captureDownload(trigger: () => Promise<void>, timeoutMs = 90_000): Promise<Download> {
     const [download] = await Promise.all([
-      this.page.waitForEvent("download"),
+      this.page.waitForEvent("download", { timeout: timeoutMs }),
       trigger(),
     ]);
     const stream = await download.createReadStream();

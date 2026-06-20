@@ -29,9 +29,18 @@ export async function generateCSF(ctx: FlowContext): Promise<CSF> {
   await session.goto(SAT_URLS.miEspacio);
   await session.waitFor(SEL.csf.constanciaLink);
 
+  // The portal sometimes shows an intermediate page before the actual PDF download.
+  // Strategy: start listening for the download event, click the primary button,
+  // wait up to 5 s for an intermediate "Generar/Descargar" button — if one appears
+  // click it too. The captureDownload timeout is generous (90 s) to cover slow SAT servers.
   const download = await session.captureDownload(async () => {
     await session.click(SEL.csf.constanciaLink);
-  });
+    // Intermediate page — click the download trigger if it appears within 5 s.
+    await session.waitFor(SEL.csf.descargar, { timeoutMs: 5000 }).catch(() => void 0);
+    if (await session.exists(SEL.csf.descargar)) {
+      await session.click(SEL.csf.descargar);
+    }
+  }, 90_000);
   const pdf = await storeArtifact("pdf", download.buffer, {
     correlationId: ctx.correlationId,
     label: "csf",
