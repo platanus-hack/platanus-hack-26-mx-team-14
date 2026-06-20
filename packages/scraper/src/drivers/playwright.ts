@@ -1,5 +1,5 @@
 import type { Browser, BrowserContext, Page } from "playwright";
-import { uuid } from "@sat/shared";
+import { uuid, childLogger } from "@sat/shared";
 import type {
   BrowserDriver,
   Session,
@@ -123,14 +123,41 @@ class PlaywrightSession implements Session {
     return this.page.screenshot();
   }
   async captureDownload(trigger: () => Promise<void>, timeoutMs = 90_000): Promise<Download> {
-    const [download] = await Promise.all([
-      this.page.waitForEvent("download", { timeout: timeoutMs }),
-      trigger(),
-    ]);
-    const stream = await download.createReadStream();
-    const chunks: Buffer[] = [];
-    for await (const c of stream) chunks.push(c as Buffer);
-    return { buffer: Buffer.concat(chunks), filename: download.suggestedFilename() };
+    const log = childLogger({ op: "captureDownload" });
+    // Headless Chromium often OPENS a PDF inline (a popup/new tab) instead of firing a
+    // `download` event — which is why this works headed (local) but not headless (prod
+    // on Render). Race both, and if it opened inline, fetch the PDF URL with the
+    // session cookies. Heavy logging so prod tells us which path actually happened.
+    const downloadP = this.page.waitForEvent("download", { timeout: timeoutMs }).catch(() => null);
+    const popupP = this.page.waitForEvent("popup", { timeout: timeoutMs }).catch(() => null);
+    log.info({ timeoutMs }, "waiting for download/popup after trigger");
+    await trigger();
+
+    const download = await downloadP;
+    if (download) {
+      const filename = download.suggestedFilename();
+      const stream = await download.createReadStream();
+      const chunks: Buffer[] = [];
+      for await (const c of stream) chunks.push(c as Buffer);
+      const buffer = Buffer.concat(chunks);
+      log.info({ via: "download", filename, bytes: buffer.length }, "download captured");
+      return { buffer, filename };
+    }
+
+    // Fallback: a PDF rendered inline in a popup (headless behavior).
+    const popup = await popupP;
+    if (popup) {
+      await popup.waitForLoadState("domcontentloaded").catch(() => void 0);
+      const url = popup.url();
+      log.warn({ via: "popup", url }, "no download event — fetching inline PDF via context cookies");
+      const resp = await this.context.request.get(url);
+      const buffer = Buffer.from(await resp.body());
+      log.info({ via: "popup", bytes: buffer.length, status: resp.status() }, "inline PDF fetched");
+      return { buffer, filename: "vista-previa.pdf" };
+    }
+
+    log.error("no download nor popup fired after trigger (timed out)");
+    throw new Error("captureDownload: ni evento download ni popup tras el trigger (PDF inline en headless?)");
   }
   async evaluate<T>(expression: string): Promise<T> {
     return this.page.evaluate(expression) as Promise<T>;

@@ -15,10 +15,10 @@ import type {
  * It exposes a pre-connected Playwright `page` via code execution, so each Session
  * method maps to a small snippet run against `page`. See docs/08-scraper-decision.md.
  *
- * OPEN VERIFICATION ITEMS (Phase 1):
- *   - captureDownload(): PDF capture via /interact is undocumented. Two candidate
- *     paths are stubbed below; one must be confirmed before CSF/generateInvoice
- *     run on this driver (otherwise route those flows to PlaywrightDriver).
+ * VERIFY WITH A REAL KEY (the /interact contract is implemented best-effort here):
+ *   - captureDownload(): fetches the PDF that opens as a popup after the trigger.
+ *     Confirm the popup/cookie path works on Firecrawl before trusting CSF/factura
+ *     downloads on this driver (e.firma still routes to PlaywrightDriver).
  */
 const BASE = "https://api.firecrawl.dev";
 
@@ -161,13 +161,34 @@ class FirecrawlSession implements Session {
     const b64 = await this.exec<string>(code);
     return Buffer.from(b64, "base64");
   }
-  async captureDownload(_trigger: () => Promise<void>): Promise<Download> {
-    // OPEN ITEM. Candidate path: in code-exec, `page.on('download')` + read the
-    // download stream, OR fetch the PDF URL with the session's cookies. Verify in
-    // the spike (src/spikes/firecrawl-pdf.ts) before relying on this.
-    throw new Error(
-      "captureDownload not yet verified on FirecrawlDriver — see docs/08-scraper-decision.md §Open items",
+  async captureDownload(trigger: () => Promise<void>, timeoutMs = 90_000): Promise<Download> {
+    // Firecrawl runs each interact call as a SEPARATE code execution, so we can't span
+    // a `page.waitForEvent('download')` across the trigger's clicks. Instead: run the
+    // trigger (the clicks that open the PDF), then in ONE exec locate the resulting PDF
+    // — a popup/new tab in the managed (headless) browser — and fetch its URL with the
+    // session cookies via the context request. Mirrors the PlaywrightDriver fallback.
+    await trigger();
+    const deadline = Math.max(5_000, timeoutMs);
+    const b64 = await this.exec<string>(
+      `const ctx = page.context();
+       let target = null;
+       const start = Date.now();
+       while (Date.now() - start < ${deadline}) {
+         const ps = ctx.pages();
+         if (ps.length > 1) { target = ps[ps.length - 1]; break; }
+         await page.waitForTimeout(250);
+       }
+       target = target || page;
+       await target.waitForLoadState('domcontentloaded').catch(() => {});
+       const url = target.url();
+       const resp = await ctx.request.get(url);
+       const buf = await resp.body();
+       return buf.toString('base64');`,
     );
+    if (!b64) {
+      throw new Error("captureDownload (firecrawl): no se pudo obtener el PDF (¿se abrió la vista previa?)");
+    }
+    return { buffer: Buffer.from(b64, "base64"), filename: "documento.pdf" };
   }
   async evaluate<T>(expression: string): Promise<T> {
     return this.exec<T>(`return await page.evaluate(${JSON.stringify(expression)});`);

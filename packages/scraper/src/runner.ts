@@ -40,6 +40,7 @@ export async function runSkill(args: RunSkillArgs): Promise<SkillResult> {
   const driver = makeDriver(credential.kind === "efirma" ? "playwright" : undefined);
   log.info({ driver: driver.name }, "running skill");
 
+  const startedAt = Date.now();
   const session = await driver.createSession({ rfc, correlationId });
   const ctx: FlowContext = {
     session,
@@ -52,6 +53,19 @@ export async function runSkill(args: RunSkillArgs): Promise<SkillResult> {
   };
 
   try {
+    const result = await runFlow();
+    log.info({ ms: Date.now() - startedAt }, "skill finished");
+    return result;
+  } catch (err) {
+    // Capture the page so the failing (often authenticated) selector is visible.
+    log.error({ ms: Date.now() - startedAt, err: (err as Error).message }, "skill failed");
+    await dumpFailure(session, correlationId, skill);
+    throw err;
+  } finally {
+    await session.close().catch(() => void 0);
+  }
+
+  async function runFlow(): Promise<SkillResult> {
     switch (skill) {
       case "getEmitedInvoices": {
         const invoices = await getEmitedInvoices(ctx, input as never);
@@ -76,11 +90,5 @@ export async function runSkill(args: RunSkillArgs): Promise<SkillResult> {
         throw new Error(`Unknown skill: ${_exhaustive}`);
       }
     }
-  } catch (err) {
-    // Capture the page so the failing (often authenticated) selector is visible.
-    await dumpFailure(session, correlationId, skill);
-    throw err;
-  } finally {
-    await session.close().catch(() => void 0);
   }
 }
