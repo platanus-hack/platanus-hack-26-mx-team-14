@@ -31,15 +31,25 @@ class VAD {
   #speechStartTimer: ReturnType<typeof setTimeout> | null = null;
   #silenceTimer: ReturnType<typeof setTimeout> | null = null;
   #stopped = false;
+  #onSpeechStart: () => void;
+  #onSpeechEnd: () => void;
+  #silenceMs: number;
+  #threshold: number;
+  #startDebounce: number;
 
   constructor(
     stream: MediaStream,
-    private onSpeechStart: () => void,
-    private onSpeechEnd: () => void,
-    private silenceMs = 1600,
-    private threshold = 22,
-    private startDebounce = 250,
+    onSpeechStart: () => void,
+    onSpeechEnd: () => void,
+    silenceMs = 1600,
+    threshold = 22,
+    startDebounce = 250,
   ) {
+    this.#onSpeechStart = onSpeechStart;
+    this.#onSpeechEnd = onSpeechEnd;
+    this.#silenceMs = silenceMs;
+    this.#threshold = threshold;
+    this.#startDebounce = startDebounce;
     this.#ctx = new AudioContext();
     const src = this.#ctx.createMediaStreamSource(stream);
     // Highpass at 150 Hz removes AC hum, bass music, and low-frequency rumble
@@ -67,21 +77,21 @@ class VAD {
     for (let i = start; i < end; i++) sum += this.#data[i];
     const avg = sum / (end - start);
 
-    if (avg > this.threshold) {
+    if (avg > this.#threshold) {
       if (this.#silenceTimer) { clearTimeout(this.#silenceTimer); this.#silenceTimer = null; }
       if (!this.#isSpeaking && !this.#speechStartTimer) {
         this.#speechStartTimer = setTimeout(() => {
           this.#speechStartTimer = null;
-          if (!this.#stopped) { this.#isSpeaking = true; this.onSpeechStart(); }
-        }, this.startDebounce);
+          if (!this.#stopped) { this.#isSpeaking = true; this.#onSpeechStart(); }
+        }, this.#startDebounce);
       }
     } else {
       if (this.#speechStartTimer) { clearTimeout(this.#speechStartTimer); this.#speechStartTimer = null; }
       if (this.#isSpeaking && !this.#silenceTimer) {
         this.#silenceTimer = setTimeout(() => {
           this.#silenceTimer = null;
-          if (!this.#stopped) { this.#isSpeaking = false; this.onSpeechEnd(); }
-        }, this.silenceMs);
+          if (!this.#stopped) { this.#isSpeaking = false; this.#onSpeechEnd(); }
+        }, this.#silenceMs);
       }
     }
     this.#rafId = requestAnimationFrame(() => this.#tick());
