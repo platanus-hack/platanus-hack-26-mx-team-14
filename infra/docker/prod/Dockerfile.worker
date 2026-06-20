@@ -16,10 +16,10 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json .npmrc .
 COPY packages ./packages
 COPY apps/worker ./apps/worker
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile || pnpm install
 RUN pnpm --filter @sat/scraper rebuild sharp 2>/dev/null || true
 
 # Compile TypeScript → JS bundle (no tsx overhead at runtime, ~100MB saved)
 RUN pnpm --filter @sat/worker build
 
-CMD ["node", "apps/worker/dist/index.js"]
+CMD ["node", "/app/apps/worker/dist/index.js"]

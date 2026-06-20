@@ -11,10 +11,10 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json .npmrc .
 COPY packages ./packages
 COPY apps/api ./apps/api
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile || pnpm install
 
 # Compile TypeScript → JS bundle (no tsx overhead at runtime)
 RUN pnpm --filter @sat/api build
 
 EXPOSE 3000
-CMD ["node", "apps/api/dist/index.js"]
+CMD ["node", "/app/apps/api/dist/index.js"]
