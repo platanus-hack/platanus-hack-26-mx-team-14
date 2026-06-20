@@ -1,0 +1,26 @@
+{
+  "name": "@sat/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo ok"
+  },
+  "dependencies": {
+    "@sat/shared": "workspace:*",
+    "@sat/events": "workspace:*",
+    "@sat/db": "workspace:*",
+    "@sat/scraper": "workspace:*",
+    "bullmq": "^5.28.1",
+    "ioredis": "^5.4.1",
+    "drizzle-orm": "^0.36.4"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "@types/node": "^22.9.0"
+  }
+}
