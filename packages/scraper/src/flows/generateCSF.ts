@@ -17,19 +17,25 @@ export async function generateCSF(ctx: FlowContext): Promise<CSF> {
     throw new AuthError("generateCSF currently requires a CIEC credential");
   }
 
+  const log = ctx.log.child({ op: "generateCSF" });
   step(ctx, "Iniciando sesión en el Portal SAT");
+  log.info("opening Portal SAT login");
   await session.goto(SAT_URLS.portalLogin);
   await session.waitFor(SEL.portal.rfc);
+  log.info("login form ready, filling RFC + contraseña");
   await session.fill(SEL.portal.rfc, credential.rfc);
   await session.fill(SEL.portal.password, credential.password);
   await session.click(SEL.portal.submit);
   await session.waitForLoad();
+  log.info({ url: session.url() }, "portal login submitted");
 
   step(ctx, "Generando la Constancia de Situación Fiscal");
+  log.info("navigating to Mi Espacio, waiting for Constancia button");
   await session.goto(SAT_URLS.miEspacio);
   // Wait for full page load before scanning for the button (SAT portal is slow)
   await session.waitForLoad();
   await session.waitFor(SEL.csf.constanciaLink, { timeoutMs: 30_000 });
+  log.info("Constancia button visible");
 
   // The portal sometimes shows an intermediate page before the actual PDF download.
   // Strategy: start listening for the download event, click the primary button,

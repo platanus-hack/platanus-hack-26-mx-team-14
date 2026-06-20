@@ -22,6 +22,10 @@ export const logger = pino({
       "enc_password",
       "encPassword",
       "*.encPassword",
+      // The full RFC is PII; we only ever log the masked form (see maskRfc +
+      // childLogger). These paths censor any raw RFC accidentally logged elsewhere.
+      "rfcRaw",
+      "*.rfcRaw",
     ],
     censor: "[redacted]",
   },
@@ -33,10 +37,24 @@ export const logger = pino({
 
 export type Logger = typeof logger;
 
+/**
+ * Masks an RFC for logs: keeps the first 3 and last 2 chars, hides the rest.
+ * e.g. "XAXX010101000" → "XAX***00". Enough to correlate runs without exposing
+ * the taxpayer's identity (use `correlationId` for exact tracing).
+ */
+export function maskRfc(rfc: string | undefined): string | undefined {
+  if (!rfc) return rfc;
+  const r = rfc.trim().toUpperCase();
+  if (r.length <= 5) return "***";
+  return `${r.slice(0, 3)}***${r.slice(-2)}`;
+}
+
 export function childLogger(bindings: {
   correlationId?: string;
   rfc?: string;
   [k: string]: unknown;
 }): Logger {
-  return logger.child(bindings);
+  // Always mask the RFC at the binding level so no flow can leak it via logs.
+  const { rfc, ...rest } = bindings;
+  return logger.child(rfc === undefined ? rest : { ...rest, rfc: maskRfc(rfc) });
 }
