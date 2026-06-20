@@ -62,14 +62,25 @@ async function main() {
       : skill === "generateInvoice"
         ? {
             // Preview-only smoke test (confirmed=false → never emits).
+            // Receptor = público en general (XAXX010101000) so it resolves via
+            // "Cliente Frecuente"; régimen 616 / uso S01 is the público-general combo.
             receptor: {
-              rfc: process.env.SAT_RFC ?? "XAXX010101000",
+              rfc: process.env.SAT_RECEPTOR_RFC ?? "XAXX010101000",
               nombreRazonSocial: "PUBLICO EN GENERAL",
-              codigoPostal: "06000",
+              codigoPostal: process.env.SAT_RECEPTOR_CP ?? "11800",
               regimenFiscalReceptor: "616",
               usoCFDI: "S01",
             },
-            conceptos: [{ descripcion: "Prueba", cantidad: 1, valorUnitario: 100 }],
+            // claveProdServ + claveUnidad are mandatory to save a concepto.
+            conceptos: [
+              {
+                claveProdServ: "01010101",
+                descripcion: "Prueba",
+                claveUnidad: "H87",
+                cantidad: 1,
+                valorUnitario: 100,
+              },
+            ],
             confirmed: false,
           }
         : defaultRange();

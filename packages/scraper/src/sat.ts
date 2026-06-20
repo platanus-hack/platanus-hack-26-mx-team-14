@@ -63,29 +63,109 @@ export const SEL = {
     loadingMask: ".blockUI, #loadingMask, .loading, .modal.in",
   },
 
-  // --- Genera Factura ---
+  // --- Navigation: portalcfdi landing → Genera Factura ---
+  // After CIEC login you land on the portalcfdi home. Open the "menú desplegable"
+  // and pick the "Configuración de Datos V 4.0" option (this primes the v4.0 form
+  // context), then navigate to the form. The label is kept here so a SAT version
+  // bump (e.g. "V 4.1") is a one-line patch; the xpath is the documented fallback.
+  facturaNav: {
+    // portalcfdi landing → "Generación de CFDI" dropdown → "Configuración de
+    // datos V 4.0". The toggle is a Bootstrap dropdown whose handler binds late,
+    // so a plain click can navigate to its href="#" instead of opening the menu;
+    // openFacturaConfigMenu falls back to the option's own href when that happens.
+    // The option is a cross-host anchor → portal.facturaelectronica (note: NOT
+    // portalcfdi), which primes the v4.0 form context.
+    menuToggle: "#menuDesplegable",
+    configOption: 'a[href^="https://portal.facturaelectronica.sat.gob.mx/"]',
+    // On the factura portal navbar, open "Generar" then click "Nueva factura".
+    // Same late-binding dropdown caveat; nuevaFactura's href is same-host.
+    generarToggle: 'a.dropdown-toggle:has-text("Generar")',
+    nuevaFactura: 'ul.dropdown-menu a[href="/Factura/GeneraFactura"]',
+  },
+
+  // --- Genera Factura (portal.facturaelectronica.sat.gob.mx/Factura/GeneraFactura) ---
+  // This is a Knockout/FormsBuilder ("declaracion") form. The numeric `135…` id
+  // prefixes are generated at runtime and change between sessions, so we hook on
+  // the STABLE `view-model` attribute (the Knockout binding) instead. Some controls
+  // are "cintillo" widgets: a clickable opener (`a.cintillo-opener`) pops a catalog
+  // (`#div_<catalogo>`) you must click; the chosen value lands in a hidden
+  // `input.itemdeCintillo[view-model=…]` and its label renders in `#itemdeCintillo<catalogo>`.
   factura: {
-    loadingModal: ".modal-loading, #loadingModal, .blockUI",
-    moneda: "#moneda, select[name='moneda']",
-    tipoCambio: "#tipoCambio, input[name='tipoCambio']",
-    rfcReceptor: "#rfcReceptor, input[name='rfcReceptor']",
-    nombreReceptor: "#nombreRazonSocial, input[name='nombreRazonSocial']",
-    codigoPostal: "#codigoPostalReceptor, input[name='codigoPostal']",
-    regimenReceptor: "#regimenFiscalReceptor, select[name='regimenFiscalReceptor']",
-    usoCfdi: "#usoCFDI, select[name='usoCFDI']",
-    agregarConcepto: "#btnAgregarConcepto, button:has-text('Agregar')",
-    claveProdServ: "#claveProdServ",
-    descripcion: "#descripcion, textarea[name='descripcion']",
-    claveUnidad: "#claveUnidad",
-    cantidad: "#cantidad",
-    valorUnitario: "#valorUnitario",
-    descuento: "#descuento",
-    objetoImpuesto: "#objetoImpuesto",
-    numeroIdentificacion: "#numeroIdentificacion",
-    guardarConcepto: "#btnGuardarConcepto, button:has-text('Guardar')",
-    guardar: "#btnGuardar, button:has-text('Guardar')",
-    vistaPrevia: "#btnVistaPrevia, button:has-text('Vista Previa')",
-    sellar: "#btnSellar, button:has-text('Sellar'), button:has-text('Emitir')",
+    loadingModal: "#myModal.in, #modalGuardando.in, #ajaxModal.in, .blockUI, #loadAjax.overlay",
+
+    // -- Comprobante (cintillo widgets; pre-filled from the emisor's config) --
+    regimen: {
+      opener: "a#E1350006Pregimen.cintillo-opener",
+      input: "input.itemdeCintillo[view-model='E1350006Pregimen']",
+      display: "#itemdeCintillo25",
+      popup: "#div_25",
+    },
+    // Editable cintillo — a real text input (emisor CP, not the receptor's).
+    codigoPostalEmisor: "input.item-cintillo-editable[view-model='E1350006Pcp']",
+    fechaEmision: "input[view-model='E1350006PfechaEmision']",
+    tipoFactura: {
+      opener: "a#E1350006PtipodeFactura.cintillo-opener",
+      input: "input.itemdeCintillo[view-model='E1350006PtipodeFactura']",
+      display: "#itemdeCintillo33",
+      popup: "#div_33",
+    },
+    formaPago: {
+      opener: "a#E1350006PformadePago.cintillo-opener",
+      input: "input.itemdeCintillo[view-model='E1350006PformadePago']",
+      display: "#itemdeCintillo11",
+      popup: "#div_11",
+    },
+    metodoPago: {
+      opener: "a#E1350006PmetododePago.cintillo-opener",
+      input: "input.itemdeCintillo[view-model='E1350006PmetododePago']",
+      display: "#itemdeCintillo17",
+      popup: "#div_17",
+    },
+
+    // -- Datos generales --
+    // Moneda is a jQuery-UI autocomplete (type → pick from #ui-id-* list).
+    moneda: "input.ui-autocomplete-input[view-model='E1350003PFAC001Descrip']",
+    autocompleteMenu: "ul.ui-autocomplete:visible li:first-child",
+    tipoCambio: "input[view-model='E1350003PFAC002']",
+    serie: "input[view-model='E1350003PFAC003']",
+    folio: "input[view-model='E1350003PFAC004']",
+    facturaGlobal: "input[view-model='E1350003PFAC111']",
+    exportacionCheck: "input[view-model='E1350003PFAC086']",
+    exportacion: "select[view-model='E1350006PExportacion']",
+
+    // -- Datos del cliente --
+    // Cliente Frecuente autocomplete; type "Otro" to reveal the manual receptor fields.
+    clienteFrecuente: "input.ui-autocomplete-input[view-model='E1350003PFAC085Descrip']",
+    correoReceptor: "input[view-model='E1350003PFAC010']",
+    paisResidencia: "select[view-model='E1350003PFAC075']",
+
+    // -- Receptor manual fields (revealed after Cliente Frecuente = "Otro").
+    // Matches dynamically generated IDs via stable view-model attributes.
+    // Verified against the rendered form DOM. Régimen/Uso are jQuery-UI
+    // autocompletes (NOT <select>) → fill via autocompletePick.
+    rfcReceptor: "input[view-model$='PFAC007']",
+    nombreReceptor: "input[view-model$='PFAC008']",
+    codigoPostalReceptor: "input[view-model$='PFAC101']",
+    regimenReceptor: "input.ui-autocomplete-input[view-model$='PFAC103']",
+    usoCfdi: "input.ui-autocomplete-input[view-model$='PFAC009Descrip']",
+
+    // -- Conceptos grid (Knockout grid inputs and buttons).
+    agregarConcepto: "button.btnNewItem[entidad$='0001']",
+    claveProdServ: "input[view-model$='PFAC013']",
+    descripcion: "input[view-model$='PFAC083']",
+    claveUnidad: "input[view-model$='PFAC015']",
+    cantidad: "input[view-model$='PFAC016']",
+    valorUnitario: "input[view-model$='PFAC017']",
+    descuento: "input[view-model$='PFAC020']",
+    objetoImpuesto: "select[view-model$='PFAC104']",
+    numeroIdentificacion: "input[view-model$='PFAC084']",
+    guardarConcepto: "button[id*='guardarEditar'][entidad$='0001']",
+
+    // Footer actions are <a> with stable classes (verified via page dump), not
+    // <button id=…>. Text fallback kept in case the markup shifts.
+    guardar: "a.btn-guardar-das, a:has-text('Guardar')",
+    vistaPrevia: "a.btn-marcar-vista-previa, a:has-text('Vista Previa')",
+    sellar: "a.btn-sellar-factura, a:has-text('Sellar')",
   },
 
   // --- Portal SAT login (RFC + Contraseña, no captcha) — verified via diagnose ---

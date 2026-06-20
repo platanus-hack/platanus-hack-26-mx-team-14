@@ -5,6 +5,7 @@ import type {
   UploadFile,
   Download,
   WaitOpts,
+  ClickOpts,
 } from "../types.js";
 
 /**
@@ -91,8 +92,9 @@ class FirecrawlSession implements Session {
   url(): string {
     return this.currentUrl;
   }
-  async click(selector: string): Promise<void> {
-    await this.exec(`await page.click(${JSON.stringify(selector)});`);
+  async click(selector: string, opts: ClickOpts = {}): Promise<void> {
+    const clickOpts = opts.timeoutMs ? `, { timeout: ${opts.timeoutMs} }` : "";
+    await this.exec(`await page.click(${JSON.stringify(selector)}${clickOpts});`);
   }
   async fill(selector: string, value: string): Promise<void> {
     await this.exec(`await page.fill(${JSON.stringify(selector)}, ${JSON.stringify(value)});`);

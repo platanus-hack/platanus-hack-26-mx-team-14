@@ -12,6 +12,10 @@ export interface WaitOpts {
   state?: "attached" | "visible" | "hidden";
 }
 
+export interface ClickOpts {
+  timeoutMs?: number;
+}
+
 export interface Session {
   /** Stable id (Firecrawl scrapeId / Playwright context id). */
   readonly id: string;
@@ -19,7 +23,7 @@ export interface Session {
   goto(url: string): Promise<void>;
   url(): string;
 
-  click(selector: string): Promise<void>;
+  click(selector: string, opts?: ClickOpts): Promise<void>;
   fill(selector: string, value: string): Promise<void>;
   type(selector: string, value: string): Promise<void>;
   selectOption(selector: string, value: string): Promise<void>;
