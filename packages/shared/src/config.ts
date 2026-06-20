@@ -49,6 +49,10 @@ const schema = z.object({
   VAPI_API_KEY: z.string().optional(),
   VAPI_WEBHOOK_SECRET: z.string().optional(),
   ELEVENLABS_API_KEY: z.string().optional(),
+
+  JWT_SECRET: z.string().default("dev-jwt-secret-change-in-prod"),
+
+  ELEVENLABS_VOICE_ID: z.string().default("EXAVITQu4vr4xnSDxMaL"),
 });
 
 type Raw = z.infer<typeof schema>;

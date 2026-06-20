@@ -4,7 +4,7 @@ import {
   FileSearch, Calculator, ShieldAlert, Mic,
   Lock, ArrowRight, ChevronRight, Zap
 } from 'lucide-react';
-import Orb from '../components/Orb';
+import HeroOrb from '../components/HeroOrb';
 import type { Page } from '../types';
 
 interface LandingPageProps {
@@ -143,6 +143,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
 
           <div className="hidden sm:flex items-center gap-7 text-sm text-muted">
             <a href="#servicios" className="hover:text-ink transition-colors duration-150">Servicios</a>
+            <a href="#demo" className="hover:text-ink transition-colors duration-150">Demo</a>
             <a href="#seguridad" className="hover:text-ink transition-colors duration-150">Seguridad</a>
           </div>
 
@@ -237,47 +238,14 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             </motion.div>
           </div>
 
-          {/* Orb preview */}
+          {/* Interactive Orb */}
           <motion.div
             initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.88, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ duration: 0.9, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
             className="flex items-center justify-center lg:justify-end"
-            aria-hidden="true"
           >
-            <div className="relative">
-              {/* Multi-layer atmospheric glow */}
-              <motion.div
-                className="absolute rounded-full pointer-events-none"
-                style={{
-                  inset: '-55%',
-                  background: 'radial-gradient(circle, oklch(0.55 0.16 230) 0%, transparent 65%)',
-                  filter: 'blur(60px)',
-                }}
-                animate={prefersReducedMotion ? {} : {
-                  opacity: [0.18, 0.30, 0.18],
-                  scale: [1, 1.08, 1],
-                }}
-                transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
-              />
-              <motion.div
-                className="absolute rounded-full pointer-events-none"
-                style={{
-                  inset: '-30%',
-                  background: 'radial-gradient(circle, oklch(0.72 0.17 162 / 0.25) 0%, transparent 60%)',
-                  filter: 'blur(30px)',
-                }}
-                animate={prefersReducedMotion ? {} : {
-                  opacity: [0.3, 0.5, 0.3],
-                  scale: [1.05, 1, 1.05],
-                }}
-                transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut', delay: 0.8 }}
-              />
-              <Orb state="idle" size={260} />
-              <p className="text-center text-xs text-subtle mt-5 tracking-wide">
-                Pregunta en voz o escribe
-              </p>
-            </div>
+            <HeroOrb />
           </motion.div>
         </section>
 

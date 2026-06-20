@@ -1,9 +1,10 @@
 import { useState, type SyntheticEvent } from 'react';
 import { Eye, EyeOff, ArrowLeft, ArrowRight, Lock, Mail, User, ShieldCheck, FileSearch, Calculator } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import FileDropzone from '../components/FileDropzone';
 import PasswordStrength from '../components/PasswordStrength';
 import Orb from '../components/Orb';
+import api from '../lib/api';
+import { setToken, setUser } from '../lib/auth';
 import type { AuthTab, AuthStep, Page } from '../types';
 
 interface AuthPageProps {
@@ -16,9 +17,6 @@ interface SignupData {
   email: string;
   password: string;
   rfc: string;
-  fiel: string;
-  cerFile: File | null;
-  keyFile: File | null;
 }
 
 const brandFeatures = [
@@ -32,25 +30,36 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
   const [tab, setTab] = useState<AuthTab>('login');
   const [step, setStep] = useState<AuthStep>(1);
   const [showPassword, setShowPassword] = useState(false);
-  const [showFiel, setShowFiel] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPwd, setLoginPwd] = useState('');
   const [loginError, setLoginError] = useState('');
 
   const [signup, setSignup] = useState<SignupData>({
-    name: '', email: '', password: '',
-    rfc: '', fiel: '',
-    cerFile: null, keyFile: null,
+    name: '', email: '', password: '', rfc: '',
   });
+  const [signupError, setSignupError] = useState('');
 
-  function handleLogin(e: SyntheticEvent) {
+  async function handleLogin(e: SyntheticEvent) {
     e.preventDefault();
     if (!loginEmail || !loginPwd) {
       setLoginError('Completa ambos campos para continuar.');
       return;
     }
-    onLogin();
+    setLoading(true);
+    setLoginError('');
+    try {
+      const { data } = await api.post('/auth/login', { email: loginEmail, password: loginPwd });
+      setToken(data.token);
+      setUser(data.user);
+      onLogin();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setLoginError(msg ?? 'Error al iniciar sesión. Intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleStep1(e: SyntheticEvent) {
@@ -60,14 +69,29 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
     }
   }
 
-  function handleSignup(e: SyntheticEvent) {
+  async function handleSignup(e: SyntheticEvent) {
     e.preventDefault();
-    if (signup.cerFile && signup.keyFile && signup.rfc.length >= 12) {
+    setLoading(true);
+    setSignupError('');
+    try {
+      const { data } = await api.post('/auth/register', {
+        name: signup.name,
+        email: signup.email,
+        password: signup.password,
+        rfc: signup.rfc || undefined,
+      });
+      setToken(data.token);
+      setUser(data.user);
       onLogin();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setSignupError(msg ?? 'Error al crear la cuenta. Intenta de nuevo.');
+    } finally {
+      setLoading(false);
     }
   }
 
-  function setField(field: keyof SignupData, value: string | File | null) {
+  function setField(field: keyof SignupData, value: string) {
     setSignup(prev => ({ ...prev, [field]: value }));
   }
 
@@ -83,10 +107,7 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
         className="hidden lg:flex flex-col w-[440px] shrink-0 relative overflow-hidden border-r border-border"
         aria-hidden="true"
       >
-        {/* Panel bg */}
         <div className="absolute inset-0 bg-surface" />
-
-        {/* Ambient glows */}
         <div
           className="absolute rounded-full pointer-events-none"
           style={{
@@ -105,10 +126,7 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
             filter: 'blur(50px)',
           }}
         />
-
-        {/* Content */}
         <div className="relative flex flex-col h-full px-10 py-10">
-          {/* Logo */}
           <div className="flex items-center gap-2 mb-auto">
             <button
               type="button"
@@ -122,8 +140,6 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
               <span className="font-semibold text-ink tracking-tight">SATI</span>
             </button>
           </div>
-
-          {/* Orb centerpiece */}
           <div className="flex flex-col items-center gap-6 my-10">
             <div className="relative">
               <motion.div
@@ -142,16 +158,10 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
               <Orb state="idle" size={140} />
             </div>
             <div className="text-center">
-              <p className="text-base font-semibold text-ink tracking-tight">
-                Tu asistente fiscal con IA
-              </p>
-              <p className="text-sm text-muted mt-1">
-                Conectado directamente con el SAT
-              </p>
+              <p className="text-base font-semibold text-ink tracking-tight">Tu asistente fiscal con IA</p>
+              <p className="text-sm text-muted mt-1">Conectado directamente con el SAT</p>
             </div>
           </div>
-
-          {/* Feature list */}
           <div className="flex flex-col gap-3 mb-auto">
             {brandFeatures.map(({ icon: Icon, label }) => (
               <div key={label} className="flex items-center gap-3">
@@ -162,12 +172,9 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
               </div>
             ))}
           </div>
-
-          {/* Testimonial */}
           <div className="mt-10 p-4 rounded-xl bg-bg border border-border">
             <p className="text-sm text-muted leading-relaxed italic">
-              "Antes tardaba horas conciliando facturas. SATI lo hace
-              mientras tomo el café."
+              "Antes tardaba horas conciliando facturas. SATI lo hace mientras tomo el café."
             </p>
             <p className="text-xs text-subtle mt-2">— Ana L., Freelancer de diseño</p>
           </div>
@@ -176,7 +183,6 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
 
       {/* ── Right form panel ── */}
       <div className="flex-1 flex flex-col min-h-screen">
-        {/* Mobile nav */}
         <header className="lg:hidden border-b border-border">
           <div className="px-6 h-14 flex items-center">
             <button
@@ -192,7 +198,6 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
           </div>
         </header>
 
-        {/* Back link on desktop */}
         <div className="hidden lg:flex items-center px-10 pt-8">
           <button
             type="button"
@@ -207,7 +212,6 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
         <main className="flex-1 flex items-center justify-center px-6 py-10 lg:py-0">
           <div className="w-full max-w-[400px]">
 
-            {/* Tab switcher */}
             <div
               className="flex mb-7 p-1 bg-surface rounded-xl border border-border"
               role="tablist"
@@ -219,7 +223,7 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                   type="button"
                   role="tab"
                   aria-selected={tab === t}
-                  onClick={() => { setTab(t); setStep(1); }}
+                  onClick={() => { setTab(t); setStep(1); setLoginError(''); setSignupError(''); }}
                   className={`flex-1 h-9 rounded-lg text-sm font-medium transition-all duration-200 ${
                     tab === t
                       ? 'bg-bg text-ink border border-border shadow-sm'
@@ -240,9 +244,7 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
                 >
-                  <h1 className="text-xl font-semibold text-ink mb-1 tracking-tight">
-                    Bienvenido de vuelta
-                  </h1>
+                  <h1 className="text-xl font-semibold text-ink mb-1 tracking-tight">Bienvenido de vuelta</h1>
                   <p className="text-sm text-muted mb-6">Accede a tu asistente fiscal.</p>
 
                   <form onSubmit={handleLogin} noValidate className="flex flex-col gap-4">
@@ -303,22 +305,20 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      className="text-xs text-emerald text-right hover:underline self-end -mt-1"
-                    >
+                    <button type="button" className="text-xs text-emerald text-right hover:underline self-end -mt-1">
                       ¿Olvidaste tu contraseña?
                     </button>
 
                     <motion.button
                       type="submit"
-                      className="h-11 w-full rounded-full bg-emerald text-bg font-semibold text-sm flex items-center justify-center gap-2 mt-1"
+                      disabled={loading}
+                      className="h-11 w-full rounded-full bg-emerald text-bg font-semibold text-sm flex items-center justify-center gap-2 mt-1 disabled:opacity-60 disabled:cursor-not-allowed"
                       whileHover={{ opacity: 0.92, scale: 1.01 }}
                       whileTap={{ scale: 0.97 }}
                       transition={{ duration: 0.15 }}
                     >
-                      Entrar al panel
-                      <ArrowRight size={15} aria-hidden="true" />
+                      {loading ? 'Entrando…' : 'Entrar al panel'}
+                      {!loading && <ArrowRight size={15} aria-hidden="true" />}
                     </motion.button>
                   </form>
                 </motion.div>
@@ -331,15 +331,12 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
                 >
-                  {/* Step indicator */}
                   <div className="flex items-center gap-2 mb-6" aria-label={`Paso ${step} de 2`}>
                     {[1, 2].map(n => (
                       <div key={n} className="flex items-center gap-2">
                         <div
                           className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-all duration-300 ${
-                            step >= n
-                              ? 'bg-emerald text-bg'
-                              : 'bg-surface border border-border text-muted'
+                            step >= n ? 'bg-emerald text-bg' : 'bg-surface border border-border text-muted'
                           }`}
                           aria-current={step === n ? 'step' : undefined}
                         >
@@ -358,7 +355,7 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                       </div>
                     ))}
                     <span className="text-xs text-muted ml-1">
-                      {step === 1 ? 'Datos de cuenta' : 'Credenciales SAT'}
+                      {step === 1 ? 'Datos de cuenta' : 'RFC (opcional)'}
                     </span>
                   </div>
 
@@ -451,7 +448,7 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                           whileTap={{ scale: 0.97 }}
                           transition={{ duration: 0.15 }}
                         >
-                          Siguiente: Vincular SAT
+                          Siguiente
                           <ArrowRight size={15} aria-hidden="true" />
                         </motion.button>
                       </motion.form>
@@ -468,11 +465,22 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                         className="flex flex-col gap-4"
                       >
                         <div>
-                          <h2 className="text-xl font-semibold text-ink tracking-tight">Vincula tu e.firma</h2>
-                          <p className="text-sm text-muted mt-1" style={{ textWrap: 'pretty' } as React.CSSProperties}>
-                            Cifrado AES-256 en tu dispositivo. La contraseña jamás sale de tu equipo.
+                          <h2 className="text-xl font-semibold text-ink tracking-tight">RFC del SAT</h2>
+                          <p className="text-sm text-muted mt-1">
+                            Opcional. Puedes agregarlo más tarde desde tu perfil.
                           </p>
                         </div>
+
+                        {signupError && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            role="alert"
+                            className="text-sm text-red-400 bg-red-950/40 border border-red-900/60 rounded-lg px-4 py-3"
+                          >
+                            {signupError}
+                          </motion.div>
+                        )}
 
                         <div>
                           <label htmlFor="signup-rfc" className="block text-xs text-muted mb-1.5 font-medium uppercase tracking-wide">
@@ -484,63 +492,18 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                             autoComplete="off"
                             value={signup.rfc}
                             onChange={e => setField('rfc', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 13))}
-                            placeholder="XAXX010101000"
+                            placeholder="XAXX010101000 (opcional)"
                             maxLength={13}
                             aria-describedby={rfcError ? 'rfc-error' : undefined}
                             className={`input-field w-full h-11 px-4 rounded-xl bg-surface border text-sm font-mono text-ink placeholder:text-subtle focus:outline-none transition-colors ${
                               rfcError ? 'border-red-500' : 'border-border focus:border-emerald/60'
                             }`}
-                            required
                           />
                           {rfcError && (
                             <p id="rfc-error" role="alert" className="text-xs text-red-400 mt-1">
                               {rfcError}
                             </p>
                           )}
-                        </div>
-
-                        <div>
-                          <label htmlFor="signup-fiel" className="block text-xs text-muted mb-1.5 font-medium uppercase tracking-wide">
-                            Contraseña e.firma (FIEL)
-                          </label>
-                          <div className="relative">
-                            <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-subtle pointer-events-none" aria-hidden="true" />
-                            <input
-                              id="signup-fiel"
-                              type={showFiel ? 'text' : 'password'}
-                              autoComplete="off"
-                              value={signup.fiel}
-                              onChange={e => setField('fiel', e.target.value)}
-                              placeholder="Contraseña de tu e.firma"
-                              className="input-field w-full h-11 pl-10 pr-10 rounded-xl bg-surface border border-border text-sm text-ink placeholder:text-subtle focus:outline-none focus:border-emerald/60 transition-colors"
-                              required
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowFiel(v => !v)}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-subtle hover:text-muted transition-colors"
-                              aria-label={showFiel ? 'Ocultar contraseña FIEL' : 'Mostrar contraseña FIEL'}
-                            >
-                              {showFiel ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col gap-2">
-                          <FileDropzone
-                            id="cer-drop"
-                            label="Certificado digital (.cer)"
-                            accept=".cer"
-                            extension=".cer"
-                            onFile={f => setField('cerFile', f)}
-                          />
-                          <FileDropzone
-                            id="key-drop"
-                            label="Clave privada (.key)"
-                            accept=".key"
-                            extension=".key"
-                            onFile={f => setField('keyFile', f)}
-                          />
                         </div>
 
                         <div className="flex gap-3 mt-1">
@@ -553,14 +516,14 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                           </button>
                           <motion.button
                             type="submit"
-                            disabled={!signup.cerFile || !signup.keyFile || signup.rfc.length < 12 || !signup.fiel}
+                            disabled={loading || !!rfcError}
                             className="flex-1 h-11 rounded-full bg-emerald text-bg font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                             whileHover={{ opacity: 0.92, scale: 1.01 }}
                             whileTap={{ scale: 0.97 }}
                             transition={{ duration: 0.15 }}
                           >
-                            Conectar con el SAT
-                            <ArrowRight size={15} aria-hidden="true" />
+                            {loading ? 'Creando cuenta…' : 'Crear cuenta'}
+                            {!loading && <ArrowRight size={15} aria-hidden="true" />}
                           </motion.button>
                         </div>
                       </motion.form>

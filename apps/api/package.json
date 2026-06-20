@@ -10,21 +10,23 @@
     "lint": "echo ok"
   },
   "dependencies": {
-    "@sat/shared": "workspace:*",
-    "@sat/events": "workspace:*",
-    "@sat/db": "workspace:*",
-    "@sat/agent": "workspace:*",
-    "@sat/voice": "workspace:*",
     "@anthropic-ai/sdk": "^0.105.0",
     "@fastify/cors": "^10.0.1",
-    "fastify": "^5.1.0",
+    "@fastify/jwt": "^10.1.0",
+    "@sat/agent": "workspace:*",
+    "@sat/db": "workspace:*",
+    "@sat/events": "workspace:*",
+    "@sat/shared": "workspace:*",
+    "@sat/voice": "workspace:*",
     "bullmq": "^5.28.1",
+    "drizzle-orm": "^0.36.4",
+    "fastify": "^5.1.0",
     "ioredis": "^5.4.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/node": "^22.9.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3",
-    "@types/node": "^22.9.0"
+    "typescript": "^5.6.3"
   }
 }

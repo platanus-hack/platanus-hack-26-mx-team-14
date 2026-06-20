@@ -92,6 +92,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

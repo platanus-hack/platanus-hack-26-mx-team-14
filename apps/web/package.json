@@ -12,6 +12,7 @@
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
     "@tailwindcss/vite": "^4.3.1",
+    "axios": "^1.18.0",
     "lucide-react": "^1.21.0",
     "motion": "^12.40.0",
     "react": "^19.2.6",

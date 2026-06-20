@@ -1,12 +1,37 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import LandingPage from './pages/LandingPage';
 import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
+import { isAuthenticated, clearAuth } from './lib/auth';
 import type { Page } from './types';
 
 export default function App() {
-  const [page, setPage] = useState<Page>('landing');
+  const [page, setPage] = useState<Page>(() =>
+    isAuthenticated() ? 'dashboard' : 'landing',
+  );
+
+  useEffect(() => {
+    const handler = () => {
+      clearAuth();
+      setPage('landing');
+    };
+    window.addEventListener('sati:logout', handler);
+    return () => window.removeEventListener('sati:logout', handler);
+  }, []);
+
+  function handleNavigate(next: Page) {
+    if (next === 'dashboard' && !isAuthenticated()) {
+      setPage('auth');
+      return;
+    }
+    setPage(next);
+  }
+
+  function handleLogout() {
+    clearAuth();
+    setPage('landing');
+  }
 
   return (
     <AnimatePresence mode="wait">
@@ -18,7 +43,7 @@ export default function App() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.25 }}
         >
-          <LandingPage onNavigate={setPage} />
+          <LandingPage onNavigate={handleNavigate} />
         </motion.div>
       )}
 
@@ -30,7 +55,7 @@ export default function App() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.25 }}
         >
-          <AuthPage onNavigate={setPage} onLogin={() => setPage('dashboard')} />
+          <AuthPage onNavigate={handleNavigate} onLogin={() => setPage('dashboard')} />
         </motion.div>
       )}
 
@@ -42,7 +67,7 @@ export default function App() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.25 }}
         >
-          <DashboardPage onNavigate={setPage} />
+          <DashboardPage onNavigate={handleNavigate} onLogout={handleLogout} />
         </motion.div>
       )}
     </AnimatePresence>
