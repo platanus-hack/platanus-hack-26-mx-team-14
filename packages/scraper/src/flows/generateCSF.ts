@@ -2,6 +2,7 @@ import type { CSF } from "@sat/events";
 import { AuthError } from "@sat/shared";
 import { SAT_URLS, SEL } from "../sat.js";
 import { storeArtifact } from "../artifacts.js";
+import { extractCSFFromPdf } from "../csf-extract.js";
 import { type FlowContext, step } from "./context.js";
 
 /**
@@ -18,10 +19,10 @@ export async function generateCSF(ctx: FlowContext): Promise<CSF> {
 
   step(ctx, "Iniciando sesión en el Portal SAT");
   await session.goto(SAT_URLS.portalLogin);
-  await session.waitFor("input[name='rfc'], #rfc");
-  await session.fill("input[name='rfc'], #rfc", credential.rfc);
-  await session.fill("input[name='password'], #password", credential.password);
-  await session.click("button[type='submit'], #submit");
+  await session.waitFor(SEL.portal.rfc);
+  await session.fill(SEL.portal.rfc, credential.rfc);
+  await session.fill(SEL.portal.password, credential.password);
+  await session.click(SEL.portal.submit);
   await session.waitForLoad();
 
   step(ctx, "Generando la Constancia de Situación Fiscal");
@@ -36,24 +37,13 @@ export async function generateCSF(ctx: FlowContext): Promise<CSF> {
     label: "csf",
   });
 
-  step(ctx, "Extrayendo datos de la constancia");
-  const fields = await extractCSF(download.buffer);
+  step(ctx, "Leyendo la constancia con Claude");
+  const fields = await extractCSFFromPdf(download.buffer, ctx.correlationId);
 
-  ctx.emit?.({ kind: "scraping", label: `Régimen: ${fields.regimenFiscal.join(", ")}`, status: "ok" });
+  ctx.emit?.({
+    kind: "scraping",
+    label: `Régimen: ${fields.regimenFiscal.join(", ") || "—"} · ${fields.obligaciones.length} obligaciones`,
+    status: "ok",
+  });
   return { ...fields, pdfArtifactId: pdf.id };
-}
-
-/**
- * Extract structured fields from the CSF PDF.
- * TODO(Phase 1): parse with pdf text extraction (or Claude document input).
- * Stubbed shape so the pipeline is end-to-end testable.
- */
-async function extractCSF(_pdf: Buffer): Promise<Omit<CSF, "pdfArtifactId">> {
-  return {
-    rfc: "",
-    nombre: "",
-    regimenFiscal: [],
-    domicilioFiscal: { codigoPostal: "" },
-    obligaciones: [],
-  };
 }

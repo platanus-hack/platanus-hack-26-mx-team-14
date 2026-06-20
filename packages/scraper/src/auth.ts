@@ -34,8 +34,10 @@ async function loginCiec(
   ctx: LoginCtx,
 ): Promise<void> {
   const log = childLogger({ correlationId: ctx.correlationId, rfc: cred.rfc, op: "login.ciec" });
-  const url = ctx.target === "factura" ? SAT_URLS.cfdiLoginFactura : SAT_URLS.cfdiLoginEmitidas;
-  await session.goto(url);
+  // Human entry: portalcfdi redirects through the IdP to the CIEC login form.
+  // (Hitting the deep federation URL directly renders blank.)
+  await session.goto(SAT_URLS.portalCfdi);
+  await session.waitForLoad();
   await session.waitFor(SEL.ciec.rfc);
 
   const maxAttempts = env.CAPTCHA_MAX_ATTEMPTS;
@@ -80,8 +82,8 @@ async function loginEfirma(
   ctx: LoginCtx,
 ): Promise<void> {
   const log = childLogger({ correlationId: ctx.correlationId, rfc: cred.rfc, op: "login.efirma" });
-  const url = ctx.target === "factura" ? SAT_URLS.cfdiLoginFactura : SAT_URLS.cfdiLoginEmitidas;
-  await session.goto(url);
+  await session.goto(SAT_URLS.portalCfdi);
+  await session.waitForLoad();
 
   // Switch to the e.firma tab if present.
   if (await session.exists(SEL.efirma.tab)) await session.click(SEL.efirma.tab);

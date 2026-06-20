@@ -7,6 +7,7 @@ import {
 } from "@sat/events";
 import type { AgentAction } from "@sat/events";
 import { makeDriver } from "./driver-factory.js";
+import { dumpFailure } from "./diagnostics.js";
 import type { FlowContext } from "./flows/context.js";
 import { getEmitedInvoices } from "./flows/getEmitedInvoices.js";
 import { getReceiptInvoices } from "./flows/getReceiptInvoices.js";
@@ -75,6 +76,10 @@ export async function runSkill(args: RunSkillArgs): Promise<SkillResult> {
         throw new Error(`Unknown skill: ${_exhaustive}`);
       }
     }
+  } catch (err) {
+    // Capture the page so the failing (often authenticated) selector is visible.
+    await dumpFailure(session, correlationId, skill);
+    throw err;
   } finally {
     await session.close().catch(() => void 0);
   }

@@ -27,21 +27,24 @@ export const SAT_URLS = {
 export const SEL = {
   // --- CIEC login (cfdiau) ---
   ciec: {
-    rfc: "#Ecom_User_ID",
-    password: "#Ecom_Password",
-    captchaImg: "#divCaptcha img, img#imgCaptcha, #IDPLogin img",
-    captchaInput: "#userCaptcha, #captcha, input[name='captcha']",
-    submit: "#submit, button[type='submit'], input[type='submit']",
-    loginError: ".alert-danger, #idpErrorText, .error",
+    rfc: "#rfc",
+    password: "#password",
+    // The captcha <img> sits next to #userCaptcha. Robust fallback chain; refine
+    // with `diagnose cfdi` (now dumps images) if the element screenshot misses.
+    captchaImg:
+      "#divCaptcha img, img#divImagenCaptcha, img[src*='aptcha'], img[id*='aptcha'], #userCaptcha ~ img",
+    captchaInput: "#userCaptcha",
+    submit: "#submit",
+    loginError: ".alert-danger, #idpErrorText, .error, .ui-messages-error, span.messageError",
   },
 
-  // --- e.firma login (cfdiau, FIEL tab) ---
+  // --- e.firma login (cfdiau) — toggle via the "e.firma" button ---
   efirma: {
-    tab: "a[href*='efirma'], #efirmaTab, button:has-text('e.firma')",
-    cerInput: "input#certificate, input[name='certificate'], input[type='file'][accept*='cer']",
-    keyInput: "input#privateKey, input[name='privateKey'], input[type='file'][accept*='key']",
-    keyPassword: "#privateKeyPassword, input[name='keyPassword'], #pin",
-    submit: "#submit, button[type='submit']",
+    tab: "#buttonFiel",
+    cerInput: "input[type='file'][id*='cert'], #fileCertificate, input[name='certificate'], input[type='file']:nth-of-type(1)",
+    keyInput: "input[type='file'][id*='priv'], #filePrivateKey, input[name='privateKey'], input[type='file']:nth-of-type(2)",
+    keyPassword: "#privateKeyPassword, #password, input[type='password']",
+    submit: "#submit, #buttonFielSubmit",
   },
 
   // --- Consulta (emitidas/recibidas) ---
@@ -84,8 +87,20 @@ export const SEL = {
     sellar: "#btnSellar, button:has-text('Sellar'), button:has-text('Emitir')",
   },
 
-  // --- Mi Espacio (CSF) ---
+  // --- Portal SAT login (RFC + Contraseña, no captcha) — verified via diagnose ---
+  portal: {
+    rfc: 'input[placeholder="RFC"]',
+    password: 'input[name="password"]',
+    submit: 'button:has-text("Enviar")',
+  },
+
+  // --- Mi Espacio (CSF) — verified via dump-on-failure ---
   csf: {
-    constanciaLink: "a:has-text('Constancia de Situación Fiscal'), #generarConstancia",
+    // It's a <button type="submit">, not a link.
+    constanciaLink: "button:has-text('Constancia de Situación Fiscal')",
+    // Likely intermediate page: a generar/descargar/imprimir trigger (best-effort;
+    // the next dump-on-failure will confirm if the first click isn't a direct PDF).
+    descargar:
+      "button:has-text('Generar'), button:has-text('Descargar'), button:has-text('Imprimir'), a:has-text('Descargar')",
   },
 } as const;

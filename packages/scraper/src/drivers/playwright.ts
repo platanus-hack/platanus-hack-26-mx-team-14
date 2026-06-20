@@ -16,7 +16,12 @@ export class PlaywrightDriver implements BrowserDriver {
   private async getBrowser(): Promise<Browser> {
     if (this.browser) return this.browser;
     const { chromium } = await import("playwright");
-    this.browser = await chromium.launch({ headless: true });
+    // HEADED=1 → watch the browser drive the SAT (great for debugging selectors).
+    const headed = process.env.HEADED === "1" || process.env.HEADED === "true";
+    this.browser = await chromium.launch({
+      headless: !headed,
+      slowMo: headed ? 250 : 0,
+    });
     return this.browser;
   }
 
