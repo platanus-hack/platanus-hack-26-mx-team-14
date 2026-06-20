@@ -34,8 +34,10 @@ async function loginCiec(
   ctx: LoginCtx,
 ): Promise<void> {
   const log = childLogger({ correlationId: ctx.correlationId, rfc: cred.rfc, op: "login.ciec" });
-  const url = ctx.target === "factura" ? SAT_URLS.cfdiLoginFactura : SAT_URLS.cfdiLoginEmitidas;
-  await session.goto(url);
+  // Human entry: portalcfdi redirects through the IdP to the CIEC login form.
+  // (Hitting the deep federation URL directly renders blank.)
+  await session.goto(SAT_URLS.portalCfdi);
+  await session.waitForLoad();
   await session.waitFor(SEL.ciec.rfc);
 
   const maxAttempts = env.CAPTCHA_MAX_ATTEMPTS;
@@ -43,8 +45,8 @@ async function loginCiec(
     await session.fill(SEL.ciec.rfc, cred.rfc);
     await session.fill(SEL.ciec.password, cred.password);
 
-    // Read captcha image → Claude vision → type it.
-    const img = await session.screenshot(SEL.ciec.captchaImg);
+    // Read captcha image → Claude vision (voted) → type it.
+    const img = await getCaptchaImage(session, ctx);
     const solution = await solveCaptcha(img, ctx);
     await session.fill(SEL.ciec.captchaInput, solution);
     await session.click(SEL.ciec.submit);
@@ -80,8 +82,8 @@ async function loginEfirma(
   ctx: LoginCtx,
 ): Promise<void> {
   const log = childLogger({ correlationId: ctx.correlationId, rfc: cred.rfc, op: "login.efirma" });
-  const url = ctx.target === "factura" ? SAT_URLS.cfdiLoginFactura : SAT_URLS.cfdiLoginEmitidas;
-  await session.goto(url);
+  await session.goto(SAT_URLS.portalCfdi);
+  await session.waitForLoad();
 
   // Switch to the e.firma tab if present.
   if (await session.exists(SEL.efirma.tab)) await session.click(SEL.efirma.tab);
@@ -101,6 +103,23 @@ async function loginEfirma(
     throw new AuthError("SAT rejected e.firma (.cer/.key/password)", { rfc: cred.rfc });
   }
   log.info("e.firma login ok");
+}
+
+/**
+ * IMPORTANT STUFF: Get the captcha image. Prefer the ORIGINAL bytes from the `data:` URI (sharp +
+ * Claude read it far better than a re-rendered screenshot); fall back to an
+ * element screenshot if the src isn't inline.
+ */
+async function getCaptchaImage(session: Session, ctx: LoginCtx): Promise<Buffer> {
+  const src = await session.getAttribute(SEL.ciec.captchaImg, "src").catch(() => null);
+  if (src && src.startsWith("data:")) {
+    const comma = src.indexOf(",");
+    if (comma !== -1) return Buffer.from(src.slice(comma + 1), "base64");
+  }
+  childLogger({ correlationId: ctx.correlationId, op: "captcha" }).debug(
+    "captcha src not inline — falling back to element screenshot",
+  );
+  return session.screenshot(SEL.ciec.captchaImg);
 }
 
 /** Heuristic: are we still sitting on a cfdiau login page? */

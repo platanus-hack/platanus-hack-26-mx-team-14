@@ -10,13 +10,16 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "echo ok",
+    "test:skill": "tsx src/spikes/run-skill.ts",
+    "diagnose": "tsx src/spikes/diagnose.ts",
     "spike:pdf": "tsx src/spikes/firecrawl-pdf.ts"
   },
   "dependencies": {
     "@sat/shared": "workspace:*",
     "@sat/events": "workspace:*",
     "@anthropic-ai/sdk": "^0.105.0",
-    "playwright": "^1.49.0"
+    "playwright": "^1.49.0",
+    "sharp": "^0.34.0"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

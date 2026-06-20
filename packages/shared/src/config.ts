@@ -33,7 +33,7 @@ const schema = z.object({
   SAT_DRIVER: z.enum(["playwright", "firecrawl"]).default("playwright"),
   FIRECRAWL_API_KEY: z.string().optional(),
   ARTIFACTS_DIR: z.string().default("./artifacts-local"),
-  CAPTCHA_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  CAPTCHA_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
 
   // Credential encryption (32 bytes, base64). Compose calls it ENCRYPTION_KEY.
   ENCRYPTION_KEY: z.string().optional(),

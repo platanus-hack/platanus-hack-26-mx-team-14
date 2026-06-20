@@ -16,7 +16,12 @@ export class PlaywrightDriver implements BrowserDriver {
   private async getBrowser(): Promise<Browser> {
     if (this.browser) return this.browser;
     const { chromium } = await import("playwright");
-    this.browser = await chromium.launch({ headless: true });
+    // HEADED=1 → watch the browser drive the SAT (great for debugging selectors).
+    const headed = process.env.HEADED === "1" || process.env.HEADED === "true";
+    this.browser = await chromium.launch({
+      headless: !headed,
+      slowMo: headed ? 250 : 0,
+    });
     return this.browser;
   }
 
@@ -54,7 +59,13 @@ class PlaywrightSession implements Session {
     await this.page.type(selector, value);
   }
   async selectOption(selector: string, value: string): Promise<void> {
-    await this.page.selectOption(selector, value);
+    // SAT <select> option values often differ from the visible label — try both.
+    // SAT things...
+    try {
+      await this.page.selectOption(selector, value);
+    } catch {
+      await this.page.selectOption(selector, { label: value });
+    }
   }
   async setInputFiles(selector: string, files: UploadFile[]): Promise<void> {
     await this.page.setInputFiles(
