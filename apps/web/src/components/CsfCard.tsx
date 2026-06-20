@@ -97,11 +97,11 @@ export default function CsfCard({ csf }: CsfCardProps) {
 
         <div className="flex flex-wrap gap-2 mt-4" aria-label="Regímenes fiscales">
           {csf.regimenFiscal.map((r) => {
-            const active = isActive(r);
+            const active = isActive(r.nombre);
             return (
               <span
-                key={r}
-                title={r}
+                key={r.nombre}
+                title={r.porcentaje != null ? `${r.nombre} (${r.porcentaje}%)` : r.nombre}
                 className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full border ${
                   active
                     ? 'border-emerald/40 text-emerald bg-emerald-lo'
@@ -109,7 +109,10 @@ export default function CsfCard({ csf }: CsfCardProps) {
                 }`}
               >
                 {active && <BadgeCheck size={12} aria-hidden="true" />}
-                {regimenShort(r)}
+                {regimenShort(r.nombre)}
+                {r.porcentaje != null && (
+                  <span className="text-subtle font-normal">· {r.porcentaje}%</span>
+                )}
               </span>
             );
           })}

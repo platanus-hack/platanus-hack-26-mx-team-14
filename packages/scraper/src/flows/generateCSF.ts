@@ -42,7 +42,7 @@ export async function generateCSF(ctx: FlowContext): Promise<CSF> {
 
   ctx.emit?.({
     kind: "scraping",
-    label: `Régimen: ${fields.regimenFiscal.join(", ") || "—"} · ${fields.obligaciones.length} obligaciones`,
+    label: `Régimen: ${fields.regimenFiscal.map((r) => r.nombre).join(", ") || "—"} · ${fields.obligaciones.length} obligaciones`,
     status: "ok",
   });
   return { ...fields, pdfArtifactId: pdf.id };

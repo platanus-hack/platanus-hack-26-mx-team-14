@@ -75,7 +75,7 @@ function speak(result: import("@sat/events").SkillResult): string {
     case "getReceiptInvoices":
       return `Encontré ${result.invoices.length} facturas recibidas.`;
     case "generateCSF":
-      return `Tu régimen es ${result.csf.regimenFiscal.join(", ") || "—"}.`;
+      return `Tu régimen es ${result.csf.regimenFiscal.map((r) => r.nombre).join(", ") || "—"}.`;
     case "generateInvoice":
       return result.status === "previewed"
         ? `Vista previa lista: total ${result.preview.total} pesos. ¿La emito?`

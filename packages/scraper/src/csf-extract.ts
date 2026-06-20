@@ -12,8 +12,20 @@ const CSF_SCHEMA = {
     nombre: { type: "string", description: "Nombre o razón social del contribuyente" },
     regimenFiscal: {
       type: "array",
-      items: { type: "string" },
-      description: "Todos los regímenes fiscales vigentes (nombre completo)",
+      description: "Todos los regímenes fiscales vigentes",
+      items: {
+        type: "object",
+        properties: {
+          nombre: { type: "string", description: "Nombre completo del régimen" },
+          porcentaje: {
+            type: "number",
+            description:
+              "Porcentaje asociado al régimen cuando hay varios (columna Porcentaje). Omitir si no aparece.",
+          },
+        },
+        required: ["nombre"],
+        additionalProperties: false,
+      },
     },
     domicilioFiscal: {
       type: "object",
@@ -89,8 +101,9 @@ export async function extractCSFFromPdf(
               type: "text",
               text:
                 "Extrae los datos de esta Constancia de Situación Fiscal (CSF) del SAT: " +
-                "RFC, nombre o razón social, TODOS los regímenes fiscales vigentes, el " +
-                "domicilio fiscal (código postal, entidad, municipio, colonia) y la lista " +
+                "RFC, nombre o razón social, TODOS los regímenes fiscales vigentes (cada uno " +
+                "con su PORCENTAJE cuando hay varios — toma el valor de la columna Porcentaje), " +
+                "el domicilio fiscal (código postal, entidad, municipio, colonia) y la lista " +
                 "de obligaciones (descripción y fechas si aparecen). Devuelve únicamente " +
                 "datos presentes en el documento.",
             },

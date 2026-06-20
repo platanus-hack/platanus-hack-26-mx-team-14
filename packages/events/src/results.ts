@@ -23,10 +23,17 @@ export const obligacion = z.object({
   vencimiento: z.string().optional(),
 });
 
+/** A fiscal régimen from the CSF, with its allocation % when the persona has several. */
+export const regimenCsf = z.object({
+  nombre: z.string(),
+  porcentaje: z.number().optional(),
+});
+export type RegimenCsf = z.infer<typeof regimenCsf>;
+
 export const csf = z.object({
   rfc: z.string(),
   nombre: z.string(),
-  regimenFiscal: z.array(z.string()),
+  regimenFiscal: z.array(regimenCsf),
   domicilioFiscal: z.object({
     codigoPostal: z.string(),
     entidad: z.string().optional(),

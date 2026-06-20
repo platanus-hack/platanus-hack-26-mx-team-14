@@ -156,7 +156,7 @@ export function formatDueDate(d: Date | null): string {
 
 /** A short, speakable summary derived from the CSF — for the assistant reply. */
 export function csfSummary(csf: CSF): string {
-  const regimen = csf.regimenFiscal.map(regimenShort).join(' y ');
+  const regimen = csf.regimenFiscal.map((r) => regimenShort(r.nombre)).join(' y ');
   const next = parseObligaciones(csf.obligaciones)[0];
   if (next && next.nextDue) {
     return `Tu régimen es ${regimen}. Tu próximo vencimiento es ${next.label} el ${formatDueDate(next.nextDue)}, ${next.countdown}.`;
