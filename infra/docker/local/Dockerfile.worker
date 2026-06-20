@@ -5,7 +5,8 @@ FROM mcr.microsoft.com/playwright:v1.49.0-noble
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
-RUN corepack enable
+ENV COREPACK_DEFAULT_TO_LATEST=0
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 
 WORKDIR /app
 

@@ -1,7 +1,6 @@
 services:
   postgres-sat:
     container_name: sat-postgres
-    profiles: ["local"]
     image: pgvector/pgvector:0.8.1-pg16
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
@@ -174,7 +173,6 @@ services:
           memory: 1024M
 
   frontend:
-    profiles: ["frontend"]
     container_name: sat-frontend
     build:
       context: .
@@ -183,14 +181,14 @@ services:
       - "0.0.0.0:${FRONTEND_PORT:-3001}:3001"
     restart: unless-stopped
     env_file:
-      - ./apps/frontend/.env
+      - ./apps/web/.env
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - VITE_API_URL=${VITE_API_URL:-http://localhost:3000}
     volumes:
       - .:/app
       - /app/node_modules
-      - /app/apps/frontend/node_modules
+      - /app/apps/web/node_modules
       - /app/packages/shared/node_modules
     depends_on:
       - api
