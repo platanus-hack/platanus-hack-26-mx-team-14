@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, type SyntheticEvent } from 'r
 import { Mic, Send, LogOut, MicOff } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import Orb from '../components/Orb';
+import owlLogo from '../assets/owl-logo.png';
 import TaxDataCard from '../components/TaxDataCard';
 import type { OrbState, Page } from '../types';
 
@@ -153,7 +154,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
       <header className="relative shrink-0 border-b border-border bg-bg/70 backdrop-blur-md" style={{ zIndex: 10 }}>
         <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-md bg-emerald flex items-center justify-center text-bg text-xs font-bold" aria-hidden="true">S</span>
+            <img src={owlLogo} alt="" aria-hidden="true" className="w-7 h-7 rounded-full object-cover" style={{ objectPosition: 'center 18%' }} />
             <span className="font-semibold text-ink text-sm tracking-tight">SATI</span>
           </div>
 

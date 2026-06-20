@@ -1,5 +1,6 @@
 import { useScroll, useTransform, motion, useReducedMotion } from 'motion/react';
 import { useRef } from 'react';
+import owlLogo from '../assets/owl-logo.png';
 import {
   FileSearch, Calculator, ShieldAlert, Mic,
   Lock, ArrowRight, ChevronRight, Zap
@@ -132,12 +133,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           aria-label="Navegación principal"
         >
           <div className="flex items-center gap-2">
-            <span
-              className="w-6 h-6 rounded-md bg-emerald flex items-center justify-center text-bg text-xs font-bold"
-              aria-hidden="true"
-            >
-              S
-            </span>
+            <img src={owlLogo} alt="" aria-hidden="true" className="w-7 h-7 rounded-full object-cover" style={{ objectPosition: 'center 18%' }} />
             <span className="font-semibold text-ink tracking-tight">SATI</span>
           </div>
 
