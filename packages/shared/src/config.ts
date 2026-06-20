@@ -32,10 +32,17 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   VOYAGE_API_KEY: z.string().optional(),
 
-  SAT_DRIVER: z.enum(["playwright", "firecrawl"]).default("playwright"),
+  // Primary driver. Firecrawl is the default (managed anti-bot + live-view);
+  // CIEC flows fall back to local Playwright on infra failure, and e.firma always
+  // runs on Playwright. Without FIRECRAWL_API_KEY this degrades to Playwright.
+  SAT_DRIVER: z.enum(["playwright", "firecrawl"]).default("firecrawl"),
   FIRECRAWL_API_KEY: z.string().optional(),
   ARTIFACTS_DIR: z.string().default("./artifacts-local"),
   CAPTCHA_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+
+  // DEBUG ONLY: when truthy, login flows log the DECRYPTED RFC + password in
+  // cleartext. Use locally to verify credential decryption — NEVER set in prod.
+  DEBUG_CREDS: z.coerce.boolean().default(false),
 
   // Credential encryption (32 bytes, base64). Compose calls it ENCRYPTION_KEY.
   ENCRYPTION_KEY: z.string().optional(),

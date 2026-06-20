@@ -88,7 +88,9 @@ async function main() {
         : defaultRange();
 
   console.log(`\n▶ Running ${skill} for ${credential.rfc} (${credential.kind})`);
-  console.log(`  driver=${process.env.SAT_DRIVER ?? "playwright"} headed=${process.env.HEADED ?? "0"}\n`);
+  const driver = process.env.SAT_DRIVER ?? "firecrawl";
+  const resolved = driver === "firecrawl" && !process.env.FIRECRAWL_API_KEY ? "playwright" : driver;
+  console.log(`  driver=${resolved} (fallback=playwright) headed=${process.env.HEADED ?? "0"}\n`);
 
   const result = await runSkill({
     skill,

@@ -25,7 +25,8 @@ export interface Session {
 
   click(selector: string, opts?: ClickOpts): Promise<void>;
   fill(selector: string, value: string): Promise<void>;
-  type(selector: string, value: string): Promise<void>;
+  /** Types char-by-char (fires real key events). `delayMs` adds a human pause per key. */
+  type(selector: string, value: string, opts?: { delayMs?: number }): Promise<void>;
   selectOption(selector: string, value: string): Promise<void>;
   setInputFiles(selector: string, files: UploadFile[]): Promise<void>;
 

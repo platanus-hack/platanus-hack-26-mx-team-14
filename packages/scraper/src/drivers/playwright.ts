@@ -48,11 +48,19 @@ export class PlaywrightDriver implements BrowserDriver {
   }
 }
 
-class PlaywrightSession implements Session {
+/**
+ * A Playwright-backed Session. The browser may be local (PlaywrightDriver) or a
+ * remote managed browser reached over CDP (FirecrawlDriver) — the logic is
+ * identical, so both drivers share this class. `opts.liveView` exposes a hosted
+ * live-view URL (Firecrawl); `opts.cleanup` overrides teardown (disconnect CDP +
+ * release the remote session) instead of just closing the local context.
+ */
+export class PlaywrightSession implements Session {
   constructor(
     readonly id: string,
     private context: BrowserContext,
     private page: Page,
+    private opts: { liveView?: string | null; cleanup?: () => Promise<void> } = {},
   ) {}
 
   async goto(url: string): Promise<void> {
@@ -67,8 +75,8 @@ class PlaywrightSession implements Session {
   async fill(selector: string, value: string): Promise<void> {
     await this.page.fill(selector, value);
   }
-  async type(selector: string, value: string): Promise<void> {
-    await this.page.type(selector, value);
+  async type(selector: string, value: string, opts: { delayMs?: number } = {}): Promise<void> {
+    await this.page.type(selector, value, { delay: opts.delayMs });
   }
   async selectOption(selector: string, value: string): Promise<void> {
     // SAT <select> option values often differ from the visible label — try both.
@@ -124,48 +132,111 @@ class PlaywrightSession implements Session {
   }
   async captureDownload(trigger: () => Promise<void>, timeoutMs = 90_000): Promise<Download> {
     const log = childLogger({ op: "captureDownload" });
-    // Headless Chromium often OPENS a PDF inline (a popup/new tab) instead of firing a
-    // `download` event — which is why this works headed (local) but not headless (prod
-    // on Render). Race both, and if it opened inline, fetch the PDF URL with the
-    // session cookies. Heavy logging so prod tells us which path actually happened.
-    const downloadP = this.page.waitForEvent("download", { timeout: timeoutMs }).catch(() => null);
-    const popupP = this.page.waitForEvent("popup", { timeout: timeoutMs }).catch(() => null);
-    log.info({ timeoutMs }, "waiting for download/popup after trigger");
-    await trigger();
+    const ctx = this.context;
+    const page = this.page;
+    // Headless Chromium serves a PDF in THREE different ways depending on the SAT
+    // response headers: (a) a real `download` event (Content-Disposition: attachment),
+    // (b) a popup/new tab rendering it inline, or (c) the CURRENT tab navigating to the
+    // PDF URL inline. The old code only handled (a)+(b) → headless timed out on (c).
+    // Race all three and return whichever fires first. Inline PDFs are re-fetched with
+    // the session cookies via context.request.
+    const startUrl = page.url();
+    const before = new Set(ctx.pages().map((p) => p.url()));
+    log.info({ timeoutMs }, "waiting for download/popup/inline-pdf after trigger");
 
-    const download = await downloadP;
-    if (download) {
-      const filename = download.suggestedFilename();
-      const stream = await download.createReadStream();
+    const fetchPdf = async (url: string, via: string): Promise<Download | null> => {
+      if (!url || url === "about:blank") return null;
+      const resp = await ctx.request.get(url).catch(() => null);
+      if (!resp) return null;
+      const buffer = Buffer.from(await resp.body());
+      const isPdf =
+        (resp.headers()["content-type"] ?? "").includes("pdf") ||
+        buffer.subarray(0, 5).toString("latin1") === "%PDF-";
+      if (!isPdf) return null;
+      log.info({ via, url, bytes: buffer.length, status: resp.status() }, "inline PDF fetched");
+      return { buffer, filename: "documento.pdf" };
+    };
+
+    const viaDownload = async (): Promise<Download | null> => {
+      const d = await page.waitForEvent("download", { timeout: timeoutMs }).catch(() => null);
+      if (!d) return null;
+      const filename = d.suggestedFilename();
+      const stream = await d.createReadStream();
       const chunks: Buffer[] = [];
       for await (const c of stream) chunks.push(c as Buffer);
       const buffer = Buffer.concat(chunks);
       log.info({ via: "download", filename, bytes: buffer.length }, "download captured");
       return { buffer, filename };
-    }
+    };
 
-    // Fallback: a PDF rendered inline in a popup (headless behavior).
-    const popup = await popupP;
-    if (popup) {
-      await popup.waitForLoadState("domcontentloaded").catch(() => void 0);
-      const url = popup.url();
-      log.warn({ via: "popup", url }, "no download event — fetching inline PDF via context cookies");
-      const resp = await this.context.request.get(url);
-      const buffer = Buffer.from(await resp.body());
-      log.info({ via: "popup", bytes: buffer.length, status: resp.status() }, "inline PDF fetched");
-      return { buffer, filename: "vista-previa.pdf" };
-    }
+    const viaPopup = async (): Promise<Download | null> => {
+      const p = await page.waitForEvent("popup", { timeout: timeoutMs }).catch(() => null);
+      if (!p) return null;
+      await p.waitForLoadState("domcontentloaded").catch(() => void 0);
+      return fetchPdf(p.url(), "popup");
+    };
 
-    log.error("no download nor popup fired after trigger (timed out)");
-    throw new Error("captureDownload: ni evento download ni popup tras el trigger (PDF inline en headless?)");
+    // (c) Poll for the PDF opening in the same tab or any new page in the context.
+    const viaInlineNav = async (): Promise<Download | null> => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        for (const p of ctx.pages()) {
+          const u = p.url();
+          const isNewPage = !before.has(u);
+          const movedSameTab = p === page && u !== startUrl;
+          if (isNewPage || movedSameTab) {
+            const dl = await fetchPdf(u, p === page ? "same-tab" : "new-page");
+            if (dl) return dl;
+          }
+        }
+        await page.waitForTimeout(500);
+      }
+      return null;
+    };
+
+    await trigger();
+    const result = await firstTruthy([viaDownload(), viaPopup(), viaInlineNav()], timeoutMs + 1000);
+    if (result) return result;
+
+    log.error("no download/popup/inline PDF after trigger (timed out)");
+    throw new Error("captureDownload: no se obtuvo el PDF (ni download, ni popup, ni inline)");
   }
   async evaluate<T>(expression: string): Promise<T> {
     return this.page.evaluate(expression) as Promise<T>;
   }
   async liveViewUrl(): Promise<string | null> {
-    return null; // Playwright is local — no hosted live view.
+    return this.opts.liveView ?? null; // local Playwright has none; Firecrawl sets it.
   }
   async close(): Promise<void> {
+    if (this.opts.cleanup) {
+      await this.opts.cleanup();
+      return;
+    }
     await this.context.close();
   }
+}
+
+/**
+ * Resolves with the first promise to yield a truthy value; if all resolve falsy
+ * (or reject), resolves null. A hard `timeoutMs` guards against a strategy that
+ * never settles. Used to race the download-capture strategies.
+ */
+function firstTruthy<T>(promises: Promise<T | null>[], timeoutMs: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    let pending = promises.length;
+    let settled = false;
+    const finish = (v: T | null) => {
+      if (!settled) {
+        settled = true;
+        resolve(v);
+      }
+    };
+    for (const p of promises) {
+      p.then(
+        (v) => (v ? finish(v) : --pending === 0 && finish(null)),
+        () => --pending === 0 && finish(null),
+      );
+    }
+    setTimeout(() => finish(null), timeoutMs);
+  });
 }

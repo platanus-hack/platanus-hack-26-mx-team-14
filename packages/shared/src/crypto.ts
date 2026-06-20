@@ -1,6 +1,7 @@
 import {
   createCipheriv,
   createDecipheriv,
+  createHash,
   randomBytes,
 } from "node:crypto";
 import { env } from "./config.js";
@@ -21,6 +22,17 @@ function key(): Buffer {
     throw new Error("ENCRYPTION_KEY must be 32 bytes (base64-encoded)");
   }
   return k;
+}
+
+/**
+ * Short, non-reversible fingerprint of the active ENCRYPTION_KEY (first 8 hex of
+ * its SHA-256). Safe to log: lets you confirm two environments use the SAME key
+ * without exposing it. If a credential won't decrypt, compare the fingerprint at
+ * seal time vs. now — different fp ⇒ key mismatch.
+ */
+export function keyFingerprint(): string {
+  if (!env.encryptionKey) return "unset";
+  return createHash("sha256").update(env.encryptionKey).digest("hex").slice(0, 8);
 }
 
 export function seal(plaintext: Buffer | string): string {

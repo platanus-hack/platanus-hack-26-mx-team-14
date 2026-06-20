@@ -185,6 +185,8 @@ export const SEL = {
     rfc: 'input[placeholder="RFC"], input[name="rfc"], #rfc, input[id*="rfc" i]',
     password: 'input[name="password"], input[type="password"], #password',
     submit: 'button:has-text("Enviar"), button[type="submit"], input[type="submit"]',
+    // Inline validation error shown by the Svelte login form (empty when no error).
+    error: ".error-message",
   },
 
   // --- Mi Espacio (CSF) ---
