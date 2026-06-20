@@ -186,6 +186,9 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - VITE_API_URL=${VITE_API_URL:-http://localhost:3000}
+      # Demo: arranca directo en el dashboard (chat con el agente) sin login.
+      # Pon VITE_SKIP_AUTH=false para restaurar el flujo landing → login.
+      - VITE_SKIP_AUTH=${VITE_SKIP_AUTH:-true}
     volumes:
       - .:/app
       - /app/node_modules
