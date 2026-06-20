@@ -1,7 +1,7 @@
 # Dev image for @sat/worker. Uses the Playwright base image so Chromium + all
 # system deps are present (the worker drives the SAT via Playwright when
 # SAT_DRIVER=playwright). Source is bind-mounted; deps in anonymous volumes.
-FROM mcr.microsoft.com/playwright:v1.49.0-noble
+FROM mcr.microsoft.com/playwright:v1.61.0-noble
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
