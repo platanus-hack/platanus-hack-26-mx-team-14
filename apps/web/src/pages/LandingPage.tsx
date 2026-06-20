@@ -3,7 +3,7 @@ import { useRef } from 'react';
 import owlLogo from '../assets/owl-logo.png';
 import {
   FileSearch, Calculator, ShieldAlert, Mic,
-  Lock, ArrowRight, ChevronRight, Zap
+  Lock, ArrowRight, ChevronRight, Zap, Phone
 } from 'lucide-react';
 import HeroOrb from '../components/HeroOrb';
 import type { Page } from '../types';
@@ -323,6 +323,72 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               );
             })}
           </div>
+        </section>
+
+        {/* Phone Demo */}
+        <section
+          id="demo"
+          className="max-w-6xl mx-auto px-6 pb-28"
+          aria-labelledby="demo-heading"
+        >
+          <motion.div
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: '-80px' }}
+            transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
+            className="relative rounded-2xl border border-emerald/20 bg-surface overflow-hidden p-10 md:p-14 text-center"
+          >
+            {/* Glow background */}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{
+                background: 'radial-gradient(ellipse at 50% 0%, oklch(0.72 0.17 162 / 0.07) 0%, transparent 65%)',
+              }}
+              aria-hidden="true"
+            />
+
+            {/* Phone icon */}
+            <div className="relative inline-flex w-14 h-14 rounded-2xl bg-emerald-lo border border-emerald/20 items-center justify-center mb-6">
+              <Phone size={22} className="text-emerald" />
+              {/* Pulse ring */}
+              <span className="absolute inset-0 rounded-2xl border border-emerald/30 animate-ping opacity-40" aria-hidden="true" />
+            </div>
+
+            <h2
+              id="demo-heading"
+              className="relative text-2xl md:text-3xl font-semibold tracking-[-0.02em] mb-3"
+              style={{ textWrap: 'balance' } as React.CSSProperties}
+            >
+              Prueba SATI ahora mismo
+            </h2>
+            <p className="relative text-muted text-sm mb-8 max-w-[46ch] mx-auto" style={{ textWrap: 'pretty' } as React.CSSProperties}>
+              Llama a este número y habla con SATI en voz real. Pregúntale sobre impuestos, regímenes fiscales o el SAT. Sin registro, sin apps.
+            </p>
+
+            {/* Phone number */}
+            <div className="relative inline-flex items-center gap-3 px-6 py-3.5 rounded-2xl bg-bg border border-border mb-8">
+              <Phone size={16} className="text-emerald shrink-0" aria-hidden="true" />
+              <span className="text-xl font-semibold tracking-wide text-ink">+1 (434) 922-9195</span>
+            </div>
+
+            {/* Call button */}
+            <div className="relative">
+              <motion.a
+                href="tel:+14349229195"
+                className="btn-shine inline-flex items-center gap-2 h-11 px-8 rounded-full bg-emerald text-bg font-semibold text-sm"
+                whileHover={{ scale: 1.04, boxShadow: '0 0 32px oklch(0.72 0.17 162 / 0.50)' }}
+                whileTap={{ scale: 0.97 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              >
+                <Phone size={15} aria-hidden="true" />
+                Llamar ahora
+              </motion.a>
+            </div>
+
+            <p className="relative mt-5 text-xs text-subtle">
+              Demo pública · Sin acceso a tus datos reales del SAT
+            </p>
+          </motion.div>
         </section>
 
         {/* Security */}
