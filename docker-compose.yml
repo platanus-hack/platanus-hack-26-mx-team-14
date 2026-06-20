@@ -1,6 +1,7 @@
 services:
   postgres-sat:
     container_name: sat-postgres
+    profiles: ["local"]
     image: pgvector/pgvector:0.8.1-pg16
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
@@ -85,7 +86,7 @@ services:
       - NODE_ENV=${NODE_ENV:-development}
       - HOST=0.0.0.0
       - PORT=${API_PORT:-3000}
-      - POSTGRES_CONNECTION_STRING=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@sat-postgres:5432/${POSTGRES_DB}
+      - POSTGRES_CONNECTION_STRING=${POSTGRES_CONNECTION_STRING:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@sat-postgres:5432/${POSTGRES_DB}}
       - REDIS_HOST=sat-redis
       - REDIS_PORT=${REDIS_PORT:-6379}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -105,6 +106,7 @@ services:
     depends_on:
       postgres-sat:
         condition: service_healthy
+        required: false
       redis-sat:
         condition: service_healthy
     healthcheck:
@@ -134,7 +136,7 @@ services:
       - ./apps/worker/.env
     environment:
       - NODE_ENV=${NODE_ENV:-development}
-      - POSTGRES_CONNECTION_STRING=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@sat-postgres:5432/${POSTGRES_DB}
+      - POSTGRES_CONNECTION_STRING=${POSTGRES_CONNECTION_STRING:-postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@sat-postgres:5432/${POSTGRES_DB}}
       - REDIS_HOST=sat-redis
       - REDIS_PORT=${REDIS_PORT:-6379}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -159,6 +161,7 @@ services:
     depends_on:
       postgres-sat:
         condition: service_healthy
+        required: false
       redis-sat:
         condition: service_healthy
     # Chromium inside Docker requires a larger /dev/shm; ipc:host is the alternative
@@ -183,8 +186,7 @@ services:
       - ./apps/frontend/.env
     environment:
       - NODE_ENV=${NODE_ENV:-development}
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:3000}
-      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:3000}
     volumes:
       - .:/app
       - /app/node_modules
