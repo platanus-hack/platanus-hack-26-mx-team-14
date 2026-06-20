@@ -129,7 +129,13 @@ export const SEL = {
     tipoCambio: "input[view-model='E1350003PFAC002']",
     serie: "input[view-model='E1350003PFAC003']",
     folio: "input[view-model='E1350003PFAC004']",
+    // -- Factura Global (InformacionGlobal): the "Es una Factura Global" checkbox
+    // (FAC111) is rendered display:none for some emisores; checking it via the KO
+    // binding reveals the Periodicidad/Mes/Año row (E1350012P*).
     facturaGlobal: "input[view-model='E1350003PFAC111']",
+    periodicidad: "select[view-model='E1350012PPeriodicidad']",
+    mesesGlobal: "select[view-model='E1350012PMeses']",
+    anioGlobal: "input[view-model='E1350012PAnn']",
     exportacionCheck: "input[view-model='E1350003PFAC086']",
     exportacion: "select[view-model='E1350006PExportacion']",
 
@@ -147,7 +153,12 @@ export const SEL = {
     nombreReceptor: "input[view-model$='PFAC008']",
     codigoPostalReceptor: "input[view-model$='PFAC101']",
     regimenReceptor: "input.ui-autocomplete-input[view-model$='PFAC103']",
-    usoCfdi: "input.ui-autocomplete-input[view-model$='PFAC009Descrip']",
+    // Uso de la Factura is rendered as one of THREE autocompletes depending on the
+    // receptor's persona type (genérico FAC009Descrip / moral / física); only one is
+    // visible. Target the visible one (`:visible` ⇒ Playwright selectors only — read
+    // its value via session.inputValue, not evaluate/querySelector).
+    usoCfdi:
+      "input.ui-autocomplete-input[view-model$='PFAC009Descrip']:visible, input.ui-autocomplete-input[view-model$='UsoFacturaMoralDescrip']:visible, input.ui-autocomplete-input[view-model$='UsoFacturaFisicaDescrip']:visible",
 
     // -- Conceptos grid (Knockout grid inputs and buttons).
     agregarConcepto: "button.btnNewItem[entidad$='0001']",

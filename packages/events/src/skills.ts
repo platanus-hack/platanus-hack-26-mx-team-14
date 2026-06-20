@@ -43,6 +43,17 @@ export const generateInvoiceInput = z.object({
   conceptos: z.array(conceptoInput).min(1),
   moneda: z.string().default("MXN"),
   tipoCambio: z.number().positive().optional(),
+  /**
+   * InformacionGlobal — required by CFDI 4.0 when the receptor is the RFC genérico
+   * (XAXX010101000 / XEXX010101000), i.e. a factura al público en general.
+   */
+  facturaGlobal: z
+    .object({
+      periodicidad: z.string(), // c_Periodicidad: 01 Diario … 05 Bimestral
+      meses: z.string(), // c_Meses: 01-12 (o 13-18 bimestres)
+      anio: z.number().int(),
+    })
+    .optional(),
   /** Must be true to actually emit. The agent sets this only after a human "yes". */
   confirmed: z.boolean().default(false),
 });
