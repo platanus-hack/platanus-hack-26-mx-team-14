@@ -121,7 +121,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
       >
         <motion.div
           className="absolute inset-0 bg-bg/85 backdrop-blur-md"
-          style={{ opacity: navShadow } as React.CSSProperties}
+          style={{ opacity: navShadow }}
         />
         <div
           className="absolute inset-0 bg-bg/60 backdrop-blur-md"
