@@ -1,0 +1,205 @@
+services:
+  postgres-sat:
+    container_name: sat-postgres
+    image: pgvector/pgvector:0.8.1-pg16
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+        reservations:
+          memory: 512M
+    command: >
+      postgres
+        -c shared_buffers=256MB
+        -c effective_cache_size=512MB
+        -c work_mem=4MB
+        -c maintenance_work_mem=64MB
+        -c max_connections=50
+        -c wal_buffers=8MB
+        -c checkpoint_completion_target=0.9
+        -c random_page_cost=1.1
+        -c log_min_duration_statement=1000
+        -c log_statement=mod
+        -c log_connections=on
+        -c log_disconnections=on
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    shm_size: 128MB
+
+  redis-sat:
+    container_name: sat-redis
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+      - ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: >
+      sh -c 'redis-server /usr/local/etc/redis/redis.conf --requirepass "$${REDIS_PASSWORD}"'
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "$$REDIS_PASSWORD", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    sysctls:
+      - net.core.somaxconn=512
+
+  api:
+    container_name: sat-api
+    build:
+      context: .
+      dockerfile: infra/docker/local/Dockerfile.api
+    ports:
+      - "0.0.0.0:${API_PORT:-3000}:${API_PORT:-3000}"
+    restart: unless-stopped
+    env_file:
+      - ./apps/api/.env
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - HOST=0.0.0.0
+      - PORT=${API_PORT:-3000}
+      - POSTGRES_CONNECTION_STRING=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@sat-postgres:5432/${POSTGRES_DB}
+      - REDIS_HOST=sat-redis
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/api/node_modules
+      - /app/packages/shared/node_modules
+      - /app/packages/agent/node_modules
+      - /app/packages/events/node_modules
+      - /app/packages/db/node_modules
+    depends_on:
+      postgres-sat:
+        condition: service_healthy
+      redis-sat:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://localhost:${API_PORT:-3000}/health || exit 1",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+        reservations:
+          memory: 512M
+
+  worker:
+    container_name: sat-worker
+    build:
+      context: .
+      dockerfile: infra/docker/local/Dockerfile.worker
+    restart: unless-stopped
+    env_file:
+      - ./apps/worker/.env
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - POSTGRES_CONNECTION_STRING=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@sat-postgres:5432/${POSTGRES_DB}
+      - REDIS_HOST=sat-redis
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      # Playwright: run Chromium in no-sandbox mode inside Docker
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/worker/node_modules
+      - /app/packages/shared/node_modules
+      - /app/packages/scraper/node_modules
+      - /app/packages/rag/node_modules
+      - /app/packages/events/node_modules
+      - /app/packages/db/node_modules
+      - ${HOME}/.aws:/home/appuser/.aws:ro
+    depends_on:
+      postgres-sat:
+        condition: service_healthy
+      redis-sat:
+        condition: service_healthy
+    # Chromium inside Docker requires a larger /dev/shm; ipc:host is the alternative
+    shm_size: 256MB
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+        reservations:
+          memory: 1024M
+
+  web:
+    container_name: sat-web
+    build:
+      context: .
+      dockerfile: infra/docker/local/Dockerfile.web
+    ports:
+      - "0.0.0.0:${WEB_PORT:-3001}:3001"
+    restart: unless-stopped
+    env_file:
+      - ./apps/web/.env
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:3000}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/web/node_modules
+      - /app/packages/shared/node_modules
+    depends_on:
+      - api
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+        reservations:
+          memory: 1024M
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
