@@ -68,6 +68,13 @@ let cached: Env | null = null;
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   if (cached) return cached;
+
+  try {
+    (process as { loadEnvFile?: (p?: string) => void }).loadEnvFile?.();
+  } catch {
+    // no .env in cwd — fine
+  }
+
   const parsed = schema.safeParse(source);
   if (!parsed.success) {
     const issues = parsed.error.issues

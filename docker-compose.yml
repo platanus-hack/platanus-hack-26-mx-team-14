@@ -170,16 +170,17 @@ services:
         reservations:
           memory: 1024M
 
-  web:
-    container_name: sat-web
+  frontend:
+    profiles: ["frontend"]
+    container_name: sat-frontend
     build:
       context: .
-      dockerfile: infra/docker/local/Dockerfile.web
+      dockerfile: infra/docker/local/Dockerfile.frontend
     ports:
-      - "0.0.0.0:${WEB_PORT:-3001}:3001"
+      - "0.0.0.0:${FRONTEND_PORT:-3001}:3001"
     restart: unless-stopped
     env_file:
-      - ./apps/web/.env
+      - ./apps/frontend/.env
     environment:
       - NODE_ENV=${NODE_ENV:-development}
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:3000}
@@ -187,7 +188,7 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-      - /app/apps/web/node_modules
+      - /app/apps/frontend/node_modules
       - /app/packages/shared/node_modules
     depends_on:
       - api

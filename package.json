@@ -10,7 +10,7 @@
     "dev": "turbo run dev",
     "dev:api": "pnpm --filter @sat/api dev",
     "dev:worker": "pnpm --filter @sat/worker dev",
-    "dev:web": "pnpm --filter @sat/web dev",
+    "dev:frontend": "pnpm --filter @sat/frontend dev",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
