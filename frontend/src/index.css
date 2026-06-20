@@ -1,0 +1,259 @@
+@import "@fontsource-variable/geist";
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Geist Variable", system-ui, sans-serif;
+
+  --color-bg:         oklch(0.09 0.005 257);
+  --color-surface:    oklch(0.13 0.007 257);
+  --color-surface-hi: oklch(0.18 0.009 257);
+  --color-border:     oklch(0.22 0.008 257);
+  --color-ink:        oklch(0.96 0.003 257);
+  --color-muted:      oklch(0.58 0.010 257);
+  --color-subtle:     oklch(0.40 0.008 257);
+
+  --color-emerald:    oklch(0.72 0.17 162);
+  --color-emerald-lo: oklch(0.18 0.05 162);
+  --color-emerald-hi: oklch(0.88 0.08 162);
+
+  --color-orb-idle:   oklch(0.55 0.16 230);
+  --color-orb-listen: oklch(0.72 0.17 162);
+  --color-orb-think:  oklch(0.50 0.18 295);
+  --color-orb-speak:  oklch(0.68 0.20 198);
+
+  --ease-expo-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-quart-out: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* Z-index scale */
+:root {
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal-backdrop: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ──────────────────────────────────────────
+   Orb Animations
+   ────────────────────────────────────────── */
+
+@keyframes orb-breathe {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.07); }
+}
+
+@keyframes orb-pulse-fast {
+  0%, 100% { transform: scale(0.95); }
+  50%       { transform: scale(1.07); }
+}
+
+@keyframes orb-conic-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes orb-speak-beat {
+  0%, 100% { transform: scale(0.97); }
+  30%       { transform: scale(1.07); }
+  60%       { transform: scale(1.02); }
+}
+
+@keyframes ring-expand {
+  0%   { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+@keyframes wave-expand {
+  0%   { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+@keyframes typewriter-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+@keyframes shine-sweep {
+  0%   { transform: translateX(-100%) skewX(-15deg); }
+  100% { transform: translateX(250%) skewX(-15deg); }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Orb layer states */
+.orb-idle {
+  background: radial-gradient(
+    ellipse at 38% 32%,
+    oklch(0.78 0.09 220) 0%,
+    oklch(0.55 0.16 230) 48%,
+    oklch(0.26 0.08 245) 100%
+  );
+  box-shadow:
+    0 0 50px oklch(0.55 0.16 230 / 0.45),
+    0 0 100px oklch(0.55 0.16 230 / 0.18);
+  animation: orb-breathe 3.2s ease-in-out infinite;
+}
+
+.orb-listening {
+  background: radial-gradient(
+    ellipse at 38% 32%,
+    oklch(0.90 0.07 162) 0%,
+    oklch(0.72 0.17 162) 48%,
+    oklch(0.38 0.12 162) 100%
+  );
+  box-shadow:
+    0 0 55px oklch(0.72 0.17 162 / 0.55),
+    0 0 110px oklch(0.72 0.17 162 / 0.22);
+  animation: orb-pulse-fast 0.65s ease-in-out infinite;
+}
+
+.orb-thinking {
+  background: conic-gradient(
+    from 0deg at 50% 50%,
+    oklch(0.50 0.18 295),
+    oklch(0.62 0.15 282),
+    oklch(0.38 0.14 310),
+    oklch(0.56 0.17 288),
+    oklch(0.50 0.18 295)
+  );
+  box-shadow:
+    0 0 45px oklch(0.50 0.18 295 / 0.50),
+    0 0 90px oklch(0.50 0.18 295 / 0.22);
+  animation: orb-conic-spin 2.8s linear infinite;
+}
+
+.orb-speaking {
+  background: radial-gradient(
+    ellipse at 38% 32%,
+    oklch(0.88 0.12 192) 0%,
+    oklch(0.68 0.20 198) 48%,
+    oklch(0.36 0.12 210) 100%
+  );
+  box-shadow:
+    0 0 65px oklch(0.68 0.20 198 / 0.60),
+    0 0 130px oklch(0.68 0.20 198 / 0.28);
+  animation: orb-speak-beat 0.95s ease-in-out infinite;
+}
+
+.orb-highlight {
+  position: absolute;
+  top: 12%;
+  left: 18%;
+  width: 38%;
+  height: 28%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, oklch(1 0 0 / 0.22) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+/* Rings (listening) */
+.orb-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid oklch(0.72 0.17 162 / 0.5);
+  animation: ring-expand 1.8s ease-out infinite;
+}
+.orb-ring-2 { animation-delay: 0.5s; }
+.orb-ring-3 { animation-delay: 1.0s; }
+
+/* Waves (speaking) */
+.orb-wave {
+  position: absolute;
+  inset: -8%;
+  border-radius: 50%;
+  background: radial-gradient(circle, oklch(0.65 0.15 245 / 0.15) 0%, transparent 70%);
+  animation: wave-expand 1.4s ease-out infinite;
+}
+.orb-wave-2 { animation-delay: 0.6s; }
+
+/* Command bar focus ring */
+.command-bar:focus-within {
+  border-color: oklch(0.55 0.16 230 / 0.55);
+  box-shadow: 0 0 0 3px oklch(0.55 0.16 230 / 0.10);
+}
+
+/* Form input glow on focus */
+.input-field:focus {
+  box-shadow: 0 0 0 3px oklch(0.72 0.17 162 / 0.12);
+}
+
+/* Reduced motion overrides */
+@media (prefers-reduced-motion: reduce) {
+  .orb-idle,
+  .orb-listening,
+  .orb-thinking,
+  .orb-speaking {
+    animation: none !important;
+  }
+  .orb-ring,
+  .orb-wave {
+    animation: none !important;
+    opacity: 0.3;
+  }
+  .btn-shine::after {
+    animation: none !important;
+  }
+}
+
+/* Typewriter cursor */
+.typewriter-cursor::after {
+  content: "▋";
+  animation: typewriter-blink 0.9s step-end infinite;
+  color: oklch(0.72 0.17 162);
+  margin-left: 1px;
+}
+
+/* CTA shine button */
+.btn-shine {
+  position: relative;
+  overflow: hidden;
+}
+.btn-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(1 0 0 / 0.2),
+    transparent
+  );
+  animation: shine-sweep 2.8s ease-in-out infinite;
+}
+
+/* Drag-drop zones */
+.dropzone-active {
+  border-color: oklch(0.72 0.17 162) !important;
+  background: oklch(0.18 0.05 162) !important;
+}
+
+/* Card reveal */
+.card-reveal {
+  animation: fade-up 0.4s var(--ease-expo-out) forwards;
+}
