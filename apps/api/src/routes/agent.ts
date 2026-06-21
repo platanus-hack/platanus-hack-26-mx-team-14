@@ -16,6 +16,7 @@ import {
   persistToolResult,
   runSearchHistory,
   runTopCounterparties,
+  runFiscalProfile,
   logUserQuery,
   lastUserText,
 } from "../ragMemory.js";
@@ -81,14 +82,20 @@ export async function agentRoutes(app: FastifyInstance) {
           toolLog.info({ inputKeys: Object.keys((block.input as object) ?? {}) }, "tool call started");
 
           // RAG / KG-lite reads: answered inline from this user's data — no SAT, no queue.
-          if (block.name === "searchHistory" || block.name === "getTopCounterparties") {
+          if (
+            block.name === "searchHistory" ||
+            block.name === "getTopCounterparties" ||
+            block.name === "getFiscalProfile"
+          ) {
             const scope = { userId: userId ?? "", rfc: rfc ?? "" };
             const input = block.input as Record<string, unknown>;
             try {
               const out =
                 block.name === "searchHistory"
                   ? await runSearchHistory(scope, input, toolLog)
-                  : await runTopCounterparties(scope, input, toolLog);
+                  : block.name === "getTopCounterparties"
+                    ? await runTopCounterparties(scope, input, toolLog)
+                    : await runFiscalProfile(scope, toolLog);
               toolResults.push({
                 type: "tool_result",
                 tool_use_id: block.id,

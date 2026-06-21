@@ -3,9 +3,11 @@ import { embedOne, documentsFromResult } from "@sat/rag";
 import {
   searchDocuments,
   topCounterparties,
+  fiscalProfile,
   logQuery,
   type DocType,
   type SearchHit,
+  type FiscalProfile,
 } from "@sat/db";
 import type { SkillResult } from "@sat/events";
 import { enqueueEmbed } from "./queue.js";
@@ -120,6 +122,27 @@ export async function runTopCounterparties(
   });
   log.info({ direction, results: counterparties.length }, "getTopCounterparties served");
   return { skill: "getTopCounterparties", direction, counterparties };
+}
+
+export type FiscalProfileResult = {
+  skill: "getFiscalProfile";
+  profile: FiscalProfile | null;
+};
+
+/**
+ * KG-lite read path for the `getFiscalProfile` tool — returns the user's régimen,
+ * domicilio and obligaciones from the CSF already in memory (no SAT re-download).
+ */
+export async function runFiscalProfile(
+  scope: Scope,
+  log: FastifyBaseLogger,
+): Promise<FiscalProfileResult> {
+  const profile = await fiscalProfile(scope.userId, scope.rfc || undefined);
+  log.info(
+    { found: !!profile, regimenes: profile?.regimenFiscal.length ?? 0 },
+    "getFiscalProfile served",
+  );
+  return { skill: "getFiscalProfile", profile };
 }
 
 /** Extract plain text from the last user message in a transcript (for query logging). */

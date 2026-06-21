@@ -13,7 +13,13 @@ import {
 import { type ScrapeJob, type SkillName, type SkillResult } from "@sat/events";
 import { runSkillViaQueue } from "../queue.js";
 import { extractTicket } from "@sat/scraper";
-import { persistToolResult, runSearchHistory, runTopCounterparties, logUserQuery } from "../ragMemory.js";
+import {
+  persistToolResult,
+  runSearchHistory,
+  runTopCounterparties,
+  runFiscalProfile,
+  logUserQuery,
+} from "../ragMemory.js";
 
 const TOOL_LABELS: Record<string, string> = {
   getEmitedInvoices: "Consultando facturas emitidas…",
@@ -144,7 +150,7 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
           ? firstImageMsg.content.filter((b) => b.type === "image")
           : [];
         const sizeKb = imageBlocks.reduce((sum, b) => {
-          if ("source" in b && "data" in b.source) {
+          if ("source" in b && typeof b.source !== "string" && "data" in b.source) {
             return sum + (b.source.data as string).length / 1024;
           }
           return sum;
@@ -196,14 +202,20 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
           const correlationId = uuid();
 
           // RAG / KG-lite reads: answered inline from this user's data — no SAT, no queue.
-          if (block.name === "searchHistory" || block.name === "getTopCounterparties") {
+          if (
+            block.name === "searchHistory" ||
+            block.name === "getTopCounterparties" ||
+            block.name === "getFiscalProfile"
+          ) {
             const scope = { userId: userId ?? "", rfc: rfc ?? "" };
             const input = block.input as Record<string, unknown>;
             try {
               const out =
                 block.name === "searchHistory"
                   ? await runSearchHistory(scope, input, req.log)
-                  : await runTopCounterparties(scope, input, req.log);
+                  : block.name === "getTopCounterparties"
+                    ? await runTopCounterparties(scope, input, req.log)
+                    : await runFiscalProfile(scope, req.log);
               send({ type: "tool_result", skill: block.name, result: out });
               toolResults.push({
                 type: "tool_result",
