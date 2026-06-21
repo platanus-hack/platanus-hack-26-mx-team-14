@@ -60,6 +60,9 @@ const schema = z.object({
   VOICE_PROVIDER: z.enum(["vapi", "elevenlabs"]).default("vapi"),
   VAPI_API_KEY: z.string().optional(),
   VAPI_WEBHOOK_SECRET: z.string().optional(),
+  VAPI_PHONE_NUMBER_ID: z.string().optional(),
+  VAPI_ASSISTANT_ID: z.string().optional(),
+  VAPI_CALL_BYPASS_NUMBERS: z.string().optional(), // comma-separated E.164 numbers that skip rate limit
   ELEVENLABS_API_KEY: z.string().optional(),
 
   JWT_SECRET: z.string().default("dev-jwt-secret-change-in-prod"),
