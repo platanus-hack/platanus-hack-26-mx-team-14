@@ -16,6 +16,8 @@ import { publicCallRoutes } from "./routes/publicCall.js";
 import { mockRoutes } from "./routes/mock.js";
 import { privacyRoutes } from "./routes/privacy.js";
 import { insightsRoutes } from "./routes/insights.js";
+import { ragRoutes } from "./routes/rag.js";
+import { publicLlmRagRoutes } from "./routes/publicLlmRag.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -62,6 +64,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(mockRoutes);
   await app.register(privacyRoutes);
   await app.register(insightsRoutes);
+  await app.register(ragRoutes);
+  await app.register(publicLlmRagRoutes);
 
   return app;
 }

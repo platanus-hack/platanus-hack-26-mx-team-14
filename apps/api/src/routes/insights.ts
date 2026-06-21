@@ -1,6 +1,7 @@
 import "../types.js";
 import type { FastifyInstance } from "fastify";
-import { topCounterparties, topQueries, fiscalProfile, ensureQueryLog } from "@sat/db";
+import { topCounterparties, topQueries, fiscalProfile, ensureQueryLog, db, documents } from "@sat/db";
+import { and, eq, isNull, inArray, sql, gte } from "drizzle-orm";
 
 /** Curated fallbacks shown to every user (especially new ones with no history). */
 const DEFAULT_SUGGESTIONS = [
@@ -76,5 +77,63 @@ export async function insightsRoutes(app: FastifyInstance) {
     for (const d of DEFAULT_SUGGESTIONS) add(d, "default");
 
     return reply.send({ suggestions: out.slice(0, 6) });
+  });
+
+  /**
+   * Monthly invoice summary for the last 18 months.
+   * Returns { months: [{ month: "2025-01", emitido: 150000, recibido: 45000,
+   *   cntEmitido: 4, cntRecibido: 3 }] }
+   */
+  app.get("/me/invoice-summary", { onRequest: [app.authenticate] }, async (req, reply) => {
+    const { userId, rfc } = req.user;
+    if (!userId) return reply.code(401).send({ error: "unauthenticated" });
+
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 17);
+    cutoff.setDate(1);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+    const rows = await db()
+      .select({
+        month: sql<string>`substring((metadata->>'fechaEmision') from 1 for 7)`,
+        type: documents.type,
+        total: sql<string>`COALESCE(SUM(CASE WHEN metadata->>'estado' != 'Cancelado' THEN (metadata->>'total')::numeric ELSE 0 END), 0)`,
+        cnt:   sql<string>`COUNT(CASE WHEN metadata->>'estado' != 'Cancelado' THEN 1 END)`,
+      })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.userId, userId),
+          isNull(documents.deletedAt),
+          inArray(documents.type, ["invoice_emitted", "invoice_received", "invoice_issued"]),
+          gte(sql`substring((metadata->>'fechaEmision') from 1 for 10)`, cutoffStr),
+          ...(rfc ? [eq(documents.rfc, rfc)] : []),
+        ),
+      )
+      .groupBy(
+        sql`substring((metadata->>'fechaEmision') from 1 for 7)`,
+        documents.type,
+      )
+      .orderBy(sql`substring((metadata->>'fechaEmision') from 1 for 7)`);
+
+    // Pivot into per-month objects
+    const map = new Map<string, { month: string; emitido: number; recibido: number; cntEmitido: number; cntRecibido: number }>();
+    for (const r of rows) {
+      const m = r.month;
+      if (!m) continue;
+      if (!map.has(m)) map.set(m, { month: m, emitido: 0, recibido: 0, cntEmitido: 0, cntRecibido: 0 });
+      const entry = map.get(m)!;
+      const amt = Number(r.total) || 0;
+      const cnt = Number(r.cnt) || 0;
+      if (r.type === "invoice_emitted" || r.type === "invoice_issued") {
+        entry.emitido += amt;
+        entry.cntEmitido += cnt;
+      } else if (r.type === "invoice_received") {
+        entry.recibido += amt;
+        entry.cntRecibido += cnt;
+      }
+    }
+
+    return reply.send({ months: [...map.values()] });
   });
 }

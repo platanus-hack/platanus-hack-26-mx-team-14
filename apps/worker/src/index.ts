@@ -1,15 +1,38 @@
 import { Worker, UnrecoverableError } from "bullmq";
 import IORedis from "ioredis";
+import { and, eq, desc, isNull, gte } from "drizzle-orm";
 import { AppError, env, childLogger, logger, keyFingerprint } from "@sat/shared";
 import {
   QUEUES,
   type ScrapeJob,
   type SkillResult,
   type AgentAction,
+  type CSF,
 } from "@sat/events";
+import { db, documents } from "@sat/db";
 import { runSkill } from "@sat/scraper";
 import { loadCredential } from "./credentials.js";
 import { startEmbedWorker } from "./embed.js";
+
+const CSF_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+async function csfFromCache(userId: string, rfc: string): Promise<CSF | null> {
+  const cutoff = new Date(Date.now() - CSF_CACHE_TTL_MS);
+  const where = [
+    eq(documents.userId, userId),
+    eq(documents.type, "csf"),
+    isNull(documents.deletedAt),
+    gte(documents.updatedAt, cutoff),
+  ];
+  if (rfc) where.push(eq(documents.rfc, rfc));
+  const rows = await db()
+    .select({ metadata: documents.metadata })
+    .from(documents)
+    .where(and(...where))
+    .orderBy(desc(documents.updatedAt))
+    .limit(1);
+  return rows[0] ? (rows[0].metadata as unknown as CSF) : null;
+}
 
 const connection = new IORedis({ ...env.redis, maxRetriesPerRequest: null });
 const publisher = new IORedis({ ...env.redis, maxRetriesPerRequest: null });
@@ -31,6 +54,17 @@ const worker = new Worker<ScrapeJob, SkillResult>(
     };
 
     log.info({ kind: credential.kind, driver: env.SAT_DRIVER }, "credential ready, starting skill");
+
+    // Short-circuit generateCSF if we already have a fresh CSF in the DB (within 24h).
+    // Re-scraping the SAT portal for the same data takes ~25s and risks session conflicts.
+    if (data.skill === "generateCSF") {
+      const cached = await csfFromCache(data.userId, data.rfc).catch(() => null);
+      if (cached) {
+        log.info({ jobId: job.id, rfc: data.rfc }, "generateCSF cache hit — returning stored CSF");
+        return { skill: "generateCSF", csf: cached };
+      }
+    }
+
     try {
       const result = await runSkill({
         skill: data.skill,

@@ -1,11 +1,16 @@
-import { useState, useRef, useEffect, type SyntheticEvent } from 'react';
+import React, { useState, useRef, useEffect, type SyntheticEvent } from 'react';
 import { Send, LogOut, Mic, MicOff, ImagePlus, X, Settings } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import Orb from '../components/Orb';
+import InvoiceChart from '../components/InvoiceChart';
 import SuggestionChips from '../components/SuggestionChips';
 import CsfCard from '../components/CsfCard';
 import InvoiceListCard from '../components/InvoiceListCard';
 import InvoicePreviewCard from '../components/InvoicePreviewCard';
+import ChartWidget from '../components/ChartWidget';
+import RecommendationsCard from '../components/RecommendationsCard';
+import KpisGrid from '../components/KpisGrid';
+import FiscalSummaryCard from '../components/FiscalSummaryCard';
 import Markdown from '../components/Markdown';
 import owlLogo from '../assets/owl-logo.png';
 import { useVoiceAgent } from '../hooks/useVoiceAgent';
@@ -41,6 +46,14 @@ function SkillCard({ result, onConfirmInvoice }: { result: SkillResult; onConfir
       return <InvoiceListCard invoices={result.invoices} kind="recibidas" />;
     case 'generateCSF':
       return <CsfCard csf={result.csf} />;
+    case 'renderWidget':
+      return <ChartWidget spec={result.widget} />;
+    case 'displayRecommendations':
+      return <RecommendationsCard title={result.title} recommendations={result.recommendations} />;
+    case 'displayKpis':
+      return <KpisGrid title={result.title} kpis={result.kpis} />;
+    case 'displayFiscalSummary':
+      return <FiscalSummaryCard summary={result.summary} />;
     case 'generateInvoice':
       if (result.status === 'previewed') {
         return <InvoicePreviewCard preview={result.preview} onConfirm={onConfirmInvoice} />;
@@ -85,7 +98,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
   const formRef = useRef<HTMLFormElement>(null);
 
   const agent = useVoiceAgent();
-  const { status, messages, streamText, thinkingText, toolActivity, skillResult, error, sessionActive, attachedImage, attachImage, detachImage } = agent;
+  const { status, messages, streamText, thinkingText, toolActivity, skillResults, error, sessionActive, attachedImage, attachImage, detachImage, stopVoice } = agent;
 
   const glow = orbGlow[status] ?? orbGlow.idle;
   const orbState = orbStateMap[status] ?? 'idle';
@@ -104,7 +117,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
   }, [messages, streamText]);
 
   // Once the agent produces its first result, the layout latches to 'split'.
-  const layout: LayoutState = messages.length > 0 || skillResult ? 'split' : baseLayout;
+  const layout: LayoutState = messages.length > 0 || skillResults.length > 0 ? 'split' : baseLayout;
 
   // Spacebar activates session when not focused on an input
   useEffect(() => {
@@ -301,24 +314,35 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
-              className="absolute inset-0 flex flex-col items-center justify-center gap-5 pointer-events-none"
+              className="absolute inset-0 overflow-y-auto flex flex-col items-center px-6 pt-10 pb-28 gap-6"
               aria-label="Estado inicial"
             >
+              {/* Historical chart — data from DB, loads async */}
               <motion.div
-                animate={!reduce ? { scale: [1, 1.04, 1], opacity: [0.6, 0.9, 0.6] } : {}}
-                transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
-                className="flex flex-col items-center gap-3"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.1 }}
+                className="w-full max-w-2xl rounded-2xl border border-border bg-surface/60 backdrop-blur-sm px-5 pt-5 pb-4"
               >
-                <div className="w-12 h-12 rounded-full border border-border flex items-center justify-center">
-                  <Mic size={20} className="text-subtle" />
-                </div>
-                <div className="text-center">
-                  <p className="text-sm font-medium text-muted">Presiona Espacio para hablar con SATI</p>
-                  <p className="text-xs text-subtle mt-1">o escribe tu consulta fiscal abajo</p>
+                <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-4">Actividad fiscal — últimos 12 meses</p>
+                <InvoiceChart />
+              </motion.div>
+
+              {/* Hint + suggestions */}
+              <motion.div
+                animate={!reduce ? { scale: [1, 1.03, 1], opacity: [0.7, 1, 0.7] } : {}}
+                transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
+                className="flex flex-col items-center gap-3 pointer-events-none"
+              >
+                <div className="flex items-center gap-2 text-xs text-muted">
+                  <Mic size={13} className="text-subtle" />
+                  <span>Presiona Espacio para hablar · o escribe abajo</span>
                 </div>
               </motion.div>
 
-              <SuggestionChips onPick={handlePickSuggestion} />
+              <div className="pointer-events-auto">
+                <SuggestionChips onPick={handlePickSuggestion} />
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -392,8 +416,25 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                 </AnimatePresence>
 
                 {/* End session hint */}
+                {/* Stop-voice button: visible when recording, lets the user submit
+                    manually in noisy environments where silence detection fails. */}
                 <AnimatePresence>
-                  {sessionActive && (
+                  {status === 'speech' && (
+                    <motion.button
+                      type="button"
+                      initial={{ opacity: 0, scale: 0.85 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.85 }}
+                      transition={{ duration: 0.18 }}
+                      onClick={e => { e.stopPropagation(); stopVoice(); }}
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-full bg-emerald text-bg text-xs font-semibold shadow-lg shadow-emerald/20 hover:bg-emerald/90 active:scale-95 transition-transform"
+                      aria-label="Enviar mensaje de voz"
+                    >
+                      <Send size={11} />
+                      Enviar
+                    </motion.button>
+                  )}
+                  {sessionActive && status !== 'speech' && (
                     <motion.div
                       initial={{ opacity: 0, y: -2 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -486,19 +527,48 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                       )}
                     </AnimatePresence>
 
-                    {/* Dynamic skill result card */}
+                    {/* Dynamic skill result cards — stacked, unlimited.
+                        Adjacent renderWidget pairs auto-display in a 2-col grid on desktop. */}
                     <AnimatePresence>
-                      {skillResult && (
-                        <motion.div
-                          key={skillResult.skill}
-                          initial={{ opacity: 0, y: 14 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                        >
-                          <SkillCard result={skillResult} />
-                        </motion.div>
-                      )}
+                      {(() => {
+                        const rows: React.ReactNode[] = [];
+                        let i = 0;
+                        while (i < skillResults.length) {
+                          const r = skillResults[i]!;
+                          const next = skillResults[i + 1];
+                          if (r.skill === 'renderWidget' && next?.skill === 'renderWidget') {
+                            // Pair: side-by-side grid
+                            rows.push(
+                              <motion.div
+                                key={`widget-pair-${i}`}
+                                className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+                                initial={{ opacity: 0, y: 14 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.4, delay: i * 0.05, ease: [0.16, 1, 0.3, 1] }}
+                              >
+                                <SkillCard result={r} />
+                                <SkillCard result={next} />
+                              </motion.div>
+                            );
+                            i += 2;
+                          } else {
+                            rows.push(
+                              <motion.div
+                                key={`${r.skill}-${i}`}
+                                initial={{ opacity: 0, y: 14 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.4, delay: i * 0.05, ease: [0.16, 1, 0.3, 1] }}
+                              >
+                                <SkillCard result={r} />
+                              </motion.div>
+                            );
+                            i += 1;
+                          }
+                        }
+                        return rows;
+                      })()}
                     </AnimatePresence>
 
                     {/* Live status tail: "working…" sits at the very bottom, below any

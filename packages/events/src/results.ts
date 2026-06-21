@@ -89,6 +89,42 @@ export const issuedInvoice = z.object({
 });
 export type IssuedInvoice = z.infer<typeof issuedInvoice>;
 
+export type WidgetDataPoint = { label: string; value: number; [k: string]: unknown };
+
+export type WidgetSpec = {
+  kind: "bar" | "pie" | "donut" | "line" | "area" | "table" | "metric";
+  title?: string;
+  subtitle?: string;
+  data: WidgetDataPoint[];
+  series?: string[];
+  color?: string;
+};
+
+// ── Generative UI component specs (Vercel AI SDK pattern, SATI edition) ──────
+
+export type RecommendationItem = {
+  title: string;
+  detail: string;
+  priority: "high" | "medium" | "low";
+  action?: string;
+};
+
+export type KpiItem = {
+  title: string;
+  value: string;
+  sub?: string;
+  tone?: "emerald" | "amber" | "red";
+};
+
+export type FiscalSummarySpec = {
+  period: string;
+  ingresos: number;
+  gastos: number;
+  balance: number;
+  ivaFavor?: number;
+  isrEstimado?: number;
+};
+
 /** Discriminated union of what a skill run returns. */
 export type SkillResult =
   | { skill: "getEmitedInvoices"; invoices: Invoice[] }
@@ -96,4 +132,8 @@ export type SkillResult =
   | { skill: "generateCSF"; csf: CSF }
   | { skill: "generateInvoice"; status: "previewed"; preview: InvoicePreview }
   | { skill: "generateInvoice"; status: "issued"; issued: IssuedInvoice }
-  | { skill: "extractTicket"; extraction: TicketExtraction };
+  | { skill: "extractTicket"; extraction: TicketExtraction }
+  | { skill: "renderWidget"; widget: WidgetSpec }
+  | { skill: "displayRecommendations"; title?: string; recommendations: RecommendationItem[] }
+  | { skill: "displayKpis"; title?: string; kpis: KpiItem[] }
+  | { skill: "displayFiscalSummary"; summary: FiscalSummarySpec };

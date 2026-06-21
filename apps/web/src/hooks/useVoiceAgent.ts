@@ -21,7 +21,7 @@ export interface UseVoiceAgentReturn {
   streamText: string;
   thinkingText: string;
   toolActivity: string | null;
-  skillResult: SkillResult | null;
+  skillResults: SkillResult[];
   error: string;
   sessionActive: boolean;
   attachedImage: ImageAttachment | null;
@@ -30,6 +30,8 @@ export interface UseVoiceAgentReturn {
   startSession: () => Promise<void>;
   endSession: () => void;
   sendText: (text: string) => Promise<void>;
+  /** Stop recording and submit immediately — useful in noisy environments. */
+  stopVoice: () => void;
 }
 
 // ── VAD ───────────────────────────────────────────────────────────────────────
@@ -198,7 +200,6 @@ async function* readSSE(res: Response) {
 }
 
 const BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000') as string;
-const USE_MOCK = (import.meta.env.VITE_USE_MOCK_AGENT ?? '') === 'true';
 
 // ── Image compression ─────────────────────────────────────────────────────────
 function compressImage(
@@ -248,7 +249,7 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
   const [streamText, setStreamText] = useState('');
   const [thinkingText, setThinkingText] = useState('');
   const [toolActivity, setToolActivity] = useState<string | null>(null);
-  const [skillResult, setSkillResult] = useState<SkillResult | null>(null);
+  const [skillResults, setSkillResults] = useState<SkillResult[]>([]);
   const [error, setError] = useState('');
   const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null);
 
@@ -263,6 +264,9 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
   const playerRef = useRef<AudioStreamPlayer | null>(null);
   const fallbackAudioRef = useRef<HTMLAudioElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const maxRecTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const MAX_RECORDING_MS = 25_000;
 
   const setS = useCallback((s: VoiceStatus) => { statusRef.current = s; setStatus(s); }, []);
 
@@ -289,16 +293,6 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
     setToolActivity(null);
   }
 
-  function doStartRecording() {
-    if (!streamRef.current) return;
-    const rec = new MediaRecorder(streamRef.current, { mimeType: mimeTypeRef.current });
-    chunksRef.current = [];
-    rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-    rec.start(80);
-    recorderRef.current = rec;
-    setS('speech');
-  }
-
   const doSendVoice = useCallback(async () => {
     const rec = recorderRef.current;
     if (!rec || rec.state === 'inactive') return;
@@ -319,6 +313,27 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
 
     await runAgentTurn({ audioBase64, mimeType: rec.mimeType });
   }, [setS]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const stopVoice = useCallback(() => {
+    if (statusRef.current !== 'speech') return;
+    if (maxRecTimerRef.current) { clearTimeout(maxRecTimerRef.current); maxRecTimerRef.current = null; }
+    doSendVoice();
+  }, [doSendVoice]);
+
+  function doStartRecording() {
+    if (!streamRef.current) return;
+    const rec = new MediaRecorder(streamRef.current, { mimeType: mimeTypeRef.current });
+    chunksRef.current = [];
+    rec.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+    rec.start(80);
+    recorderRef.current = rec;
+    setS('speech');
+    // Safety cap: auto-submit after MAX_RECORDING_MS so noisy environments don't loop forever.
+    if (maxRecTimerRef.current) clearTimeout(maxRecTimerRef.current);
+    maxRecTimerRef.current = setTimeout(() => {
+      if (statusRef.current === 'speech') doSendVoice();
+    }, MAX_RECORDING_MS);
+  }
 
   function attachImage(file: File) {
     if (!file.type.startsWith('image/')) return;
@@ -354,6 +369,13 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
   }
 
   async function runAgentTurn(input: { audioBase64?: string; mimeType?: string; text?: string; image?: ImageAttachment | null }) {
+    // Interrupt any currently playing audio before starting a new turn.
+    playerRef.current?.destroy();
+    playerRef.current = null;
+    fallbackAudioRef.current?.pause();
+    fallbackAudioRef.current = null;
+
+    setSkillResults([]); // clear previous turn's widgets
     const token = localStorage.getItem('sati_token');
     let player: AudioStreamPlayer | null = null;
     const fallbackChunks: string[] = [];
@@ -368,9 +390,9 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
-    const endpoint = USE_MOCK ? `${BASE}/mock/agent/turn` : `${BASE}/agent/voice-turn`;
+    const endpoint = `${BASE}/agent/voice-turn`;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (!USE_MOCK && token) headers['Authorization'] = `Bearer ${token}`;
+    if (token) headers['Authorization'] = `Bearer ${token}`;
 
     // Pass last 10 messages as context (images as multimodal content blocks)
     console.log(`[useVoiceAgent] messagesRef.current has ${messagesRef.current.length} messages`);
@@ -394,7 +416,7 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
     console.log(`[useVoiceAgent] Sending ${contextMessages.length} messages, ${imageMsgCount} with images, text="${input.text?.slice(0, 50)}"`);
 
     try {
-      const body: Record<string, unknown> = { ...input, messages: USE_MOCK ? undefined : contextMessages, text: input.text };
+      const body: Record<string, unknown> = { ...input, messages: contextMessages, text: input.text };
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -406,6 +428,7 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
       if (!res.ok || !res.body) throw new Error('Error de conexión con el agente');
 
       let assistantAcc = '';
+      const turnResults: SkillResult[] = [];
 
       for await (const ev of readSSE(res)) {
         switch (ev.type) {
@@ -420,6 +443,7 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
             break;
           case 'tool_result':
             setToolActivity(null);
+            if (ev.result) turnResults.push(ev.result as SkillResult);
             break;
           case 'text':
             assistantAcc = ev.text as string;
@@ -437,7 +461,7 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
               setStreamText('');
               setThinkingText('');
             }
-            if (ev.skillResult) setSkillResult(ev.skillResult as SkillResult);
+            if (turnResults.length > 0) setSkillResults(turnResults);
             setToolActivity(null);
 
             if (player) {
@@ -478,6 +502,7 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
   }
 
   function doEndSession() {
+    if (maxRecTimerRef.current) { clearTimeout(maxRecTimerRef.current); maxRecTimerRef.current = null; }
     vadRef.current?.stop(); vadRef.current = null;
     recorderRef.current?.stop(); recorderRef.current = null;
     streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
@@ -519,7 +544,7 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
     streamText,
     thinkingText,
     toolActivity,
-    skillResult,
+    skillResults,
     error,
     sessionActive: status !== 'idle',
     attachedImage,
@@ -528,5 +553,6 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
     startSession,
     endSession: doEndSession,
     sendText,
+    stopVoice,
   };
 }

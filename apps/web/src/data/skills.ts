@@ -1,28 +1,11 @@
 import api from '../lib/api';
-import { mockSkillResult } from './mocks';
-import type { CSF, Invoice, SkillName, SkillResult } from '../types';
+import type { CSF, SkillName, SkillResult } from '../types';
 import { csfSummary } from '../lib/obligaciones';
-
-/**
- * Data source mode (VITE_DATA_MODE):
- *   mock    → canonical demo dataset only (default; safe for the live demo)
- *   live    → real SAT agent only (POST /skills/:skill/run)
- *   augment → real agent + mock fill, so thin/young accounts still look alive,
- *             with a safe fallback to mock if the agent fails.
- * Components downstream never change — they render the SkillResult union.
- */
-type DataMode = 'mock' | 'live' | 'augment';
-const MODE: DataMode = (import.meta.env.VITE_DATA_MODE as DataMode) || 'mock';
 
 export interface Caller {
   userId: string;
   credentialId: string;
   rfc: string;
-}
-
-/** The canonical demo dataset (single source of truth: @sat/events/mocks). */
-function mockFor(skill: SkillName, input: Record<string, unknown> = {}): SkillResult {
-  return mockSkillResult(skill, input) as SkillResult;
 }
 
 // ── Adapters: make raw agent output safe for the components ──────────────────
@@ -40,43 +23,6 @@ function normalize(result: SkillResult): SkillResult {
     : result;
 }
 
-// ── Merge: blend real data with mock so thin accounts still look alive ───────
-
-/** Real first; mock fills the gaps. Deduped by uuid, newest first. */
-function mergeInvoices(real: Invoice[], mock: Invoice[]): Invoice[] {
-  const seen = new Set(real.map((i) => i.uuid));
-  return [...real, ...mock.filter((i) => !seen.has(i.uuid))].sort((a, b) =>
-    a.fechaEmision < b.fechaEmision ? 1 : -1,
-  );
-}
-
-function augmentWithMock(real: SkillResult): SkillResult {
-  if (real.skill === 'getEmitedInvoices') {
-    const mock = mockFor('getEmitedInvoices');
-    if (mock.skill === 'getEmitedInvoices') {
-      return { skill: 'getEmitedInvoices', invoices: mergeInvoices(real.invoices, mock.invoices) };
-    }
-  }
-  if (real.skill === 'getReceiptInvoices') {
-    const mock = mockFor('getReceiptInvoices');
-    if (mock.skill === 'getReceiptInvoices') {
-      return { skill: 'getReceiptInvoices', invoices: mergeInvoices(real.invoices, mock.invoices) };
-    }
-  }
-  if (real.skill === 'generateCSF') {
-    const mock = mockFor('generateCSF');
-    // Keep the real CSF, but fill the régimen % (a SATI estimate the SAT omits).
-    const hasPct = real.csf.regimenFiscal.some((r) => r.porcentaje != null);
-    if (mock.skill === 'generateCSF') {
-      return {
-        skill: 'generateCSF',
-        csf: hasPct ? real.csf : { ...real.csf, regimenFiscal: mock.csf.regimenFiscal },
-      };
-    }
-  }
-  return real;
-}
-
 async function callLive(
   skill: SkillName,
   input: Record<string, unknown>,
@@ -91,23 +37,12 @@ async function callLive(
   return normalize(data.result as SkillResult);
 }
 
-/**
- * Run a SAT skill and return its typed result. The only place that knows where
- * the data comes from — components render the same SkillResult in every mode.
- */
 export async function runSkill(
   skill: SkillName,
   input: Record<string, unknown> = {},
   caller?: Caller,
 ): Promise<SkillResult> {
-  if (MODE === 'mock') return mockFor(skill, input);
-  if (MODE === 'live') return callLive(skill, input, caller);
-  // augment: real + mock; fall back to mock if the agent fails → demo never breaks.
-  try {
-    return augmentWithMock(await callLive(skill, input, caller));
-  } catch {
-    return mockFor(skill, input);
-  }
+  return callLive(skill, input, caller);
 }
 
 /** Map a natural-language request to a skill (simple intent detection). */

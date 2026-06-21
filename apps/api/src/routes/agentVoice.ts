@@ -13,7 +13,7 @@ import {
 import { type ScrapeJob, type SkillName, type SkillResult } from "@sat/events";
 import { runSkillViaQueue } from "../queue.js";
 import { extractTicket } from "@sat/scraper";
-import { resolveFastPath } from "../fastPath.js";
+import { resolveFastPath, csfFromDb, invoicesFromDb } from "../fastPath.js";
 import {
   persistToolResult,
   runSearchHistory,
@@ -22,12 +22,76 @@ import {
   logUserQuery,
 } from "../ragMemory.js";
 
+// ── TTS preprocessing ──────────────────────────────────────────────────────
+// ElevenLabs reads "$42,000" as "cuarenta y dos coma cero cero cero" in Spanish.
+// We convert currency figures to spelled-out Spanish before sending to TTS.
+function numToSpanish(n: number): string {
+  const units = ['','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve',
+    'diez','once','doce','trece','catorce','quince','dieciséis','diecisiete','dieciocho','diecinueve'];
+  const tens = ['','','veinte','treinta','cuarenta','cincuenta','sesenta','setenta','ochenta','noventa'];
+  const hundreds = ['','ciento','doscientos','trescientos','cuatrocientos','quinientos',
+    'seiscientos','setecientos','ochocientos','novecientos'];
+
+  if (n === 0) return 'cero';
+  if (n < 0) return `menos ${numToSpanish(-n)}`;
+
+  let result = '';
+  if (n >= 1_000_000) {
+    const m = Math.floor(n / 1_000_000);
+    result += (m === 1 ? 'un millón' : `${numToSpanish(m)} millones`) + ' ';
+    n %= 1_000_000;
+  }
+  if (n >= 1_000) {
+    const k = Math.floor(n / 1_000);
+    result += (k === 1 ? 'mil' : `${numToSpanish(k)} mil`) + ' ';
+    n %= 1_000;
+  }
+  if (n >= 100) {
+    if (n === 100) { result += 'cien '; n = 0; }
+    else { result += hundreds[Math.floor(n / 100)]! + ' '; n %= 100; }
+  }
+  if (n >= 20) {
+    result += tens[Math.floor(n / 10)]!;
+    if (n % 10 !== 0) result += ` y ${units[n % 10]!}`;
+    result += ' ';
+  } else if (n > 0) {
+    result += units[n]! + ' ';
+  }
+  return result.trim();
+}
+
+function preprocessForTTS(text: string): string {
+  // $1,234,567 → "un millón doscientos treinta y cuatro mil quinientos sesenta y siete pesos"
+  // $1,234 → "mil doscientos treinta y cuatro pesos"
+  // $123.45 → "ciento veintitrés pesos con cuarenta y cinco centavos"
+  return text.replace(/\$\s*([\d,]+)(?:\.(\d{1,2}))?(?:\s*(MXN|mxn|pesos?\s*mexicanos?|pesos?))?/g, (_, intPart, cents, unit) => {
+    const n = parseInt(intPart.replace(/,/g, ''), 10);
+    const isMxn = unit && /mxn|mexican/i.test(unit);
+    const currency = isMxn
+      ? (n === 1 ? 'peso mexicano' : 'pesos mexicanos')
+      : (n === 1 ? 'peso' : 'pesos');
+    let spoken = numToSpanish(n) + ' ' + currency;
+    if (cents) {
+      const c = parseInt(cents.padEnd(2, '0'), 10);
+      if (c > 0) spoken += ` con ${numToSpanish(c)} centavos`;
+    }
+    return spoken;
+  });
+}
+
 const TOOL_LABELS: Record<string, string> = {
   getEmitedInvoices: "Consultando facturas emitidas…",
   getReceiptInvoices: "Consultando facturas recibidas…",
   generateCSF: "Descargando Constancia de Situación Fiscal…",
   generateInvoice: "Preparando factura…",
   extractTicketData: "Extrayendo datos del ticket…",
+  renderWidget: "Generando visualización…",
+  displayRecommendations: "Generando recomendaciones…",
+  displayKpis: "Calculando métricas clave…",
+  displayFiscalSummary: "Preparando resumen fiscal…",
+  searchHistory: "Buscando en tu historial…",
+  getTopCounterparties: "Analizando contrapartes…",
+  getFiscalProfile: "Consultando perfil fiscal…",
 };
 
 export async function agentVoiceRoutes(app: FastifyInstance) {
@@ -226,6 +290,43 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
 
           const correlationId = uuid();
 
+          // ── Generative UI tools: inline, no SAT/queue — route directly to frontend ──
+          if (block.name === "renderWidget") {
+            const { kind = "bar", title, subtitle, data = [], series, color } = block.input as Record<string, unknown>;
+            const widgetResult = { skill: "renderWidget" as const, widget: { kind, title, subtitle, data, series, color } as import("@sat/events").WidgetSpec };
+            lastSkillResult = widgetResult;
+            send({ type: "tool_result", skill: "renderWidget", result: widgetResult });
+            toolResults.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify({ ok: true, rendered: true }) });
+            continue;
+          }
+
+          if (block.name === "displayRecommendations") {
+            const { title, recommendations = [] } = block.input as Record<string, unknown>;
+            const result: import("@sat/events").SkillResult = { skill: "displayRecommendations", title: title as string | undefined, recommendations: recommendations as import("@sat/events").RecommendationItem[] };
+            lastSkillResult = result;
+            send({ type: "tool_result", skill: "displayRecommendations", result });
+            toolResults.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify({ ok: true }) });
+            continue;
+          }
+
+          if (block.name === "displayKpis") {
+            const { title, kpis = [] } = block.input as Record<string, unknown>;
+            const result: import("@sat/events").SkillResult = { skill: "displayKpis", title: title as string | undefined, kpis: kpis as import("@sat/events").KpiItem[] };
+            lastSkillResult = result;
+            send({ type: "tool_result", skill: "displayKpis", result });
+            toolResults.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify({ ok: true }) });
+            continue;
+          }
+
+          if (block.name === "displayFiscalSummary") {
+            const { summary } = block.input as Record<string, unknown>;
+            const result: import("@sat/events").SkillResult = { skill: "displayFiscalSummary", summary: summary as import("@sat/events").FiscalSummarySpec };
+            lastSkillResult = result;
+            send({ type: "tool_result", skill: "displayFiscalSummary", result });
+            toolResults.push({ type: "tool_result", tool_use_id: block.id, content: JSON.stringify({ ok: true }) });
+            continue;
+          }
+
           // RAG / KG-lite reads: answered inline from this user's data — no SAT, no queue.
           if (
             block.name === "searchHistory" ||
@@ -267,6 +368,47 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
               const input = block.input as { imageBase64: string; imageMediaType: string };
               const extraction = await extractTicket(input.imageBase64, input.imageMediaType, correlationId);
               result = { skill: "extractTicket", extraction };
+            } else if (block.name === "getEmitedInvoices" || block.name === "getReceiptInvoices") {
+              // DB-first: return cached invoices immediately, skip the SAT scraper.
+              const inp = block.input as { from?: string; to?: string };
+              const kind = block.name === "getEmitedInvoices" ? "emitted" : "received";
+              const range = inp.from && inp.to ? { from: inp.from, to: inp.to } : null;
+              const invoices = await invoicesFromDb(userId ?? "", rfc ?? "", kind, range);
+              if (invoices.length > 0) {
+                req.log.info({ tool: block.name, count: invoices.length, range }, "invoice DB cache hit — skipping queue");
+                result = { skill: block.name, invoices };
+              } else {
+                // No cached data → fall through to SAT scraper
+                const job: ScrapeJob = {
+                  skill: block.name as SkillName,
+                  correlationId,
+                  idempotencyKey: idempotencyKey({ s: block.name, ...(block.input as object), c: correlationId }),
+                  userId: userId ?? "",
+                  credentialId: credentialId ?? "",
+                  rfc: rfc ?? "",
+                  input: block.input as Record<string, unknown>,
+                };
+                result = await runSkillViaQueue(job, 120_000);
+              }
+            } else if (block.name === "generateCSF") {
+              // Check DB cache before dispatching to the queue — avoids BullMQ round-trip
+              // (~1-2s overhead) when a fresh CSF is already stored.
+              const cached = await csfFromDb(userId ?? "", rfc ?? "");
+              if (cached) {
+                req.log.info({ reqId: req.id }, "generateCSF DB cache hit — skipping queue");
+                result = { skill: "generateCSF", csf: cached };
+              } else {
+                const job: ScrapeJob = {
+                  skill: "generateCSF",
+                  correlationId,
+                  idempotencyKey: idempotencyKey({ s: block.name, ...(block.input as object), c: correlationId }),
+                  userId: userId ?? "",
+                  credentialId: credentialId ?? "",
+                  rfc: rfc ?? "",
+                  input: block.input as Record<string, unknown>,
+                };
+                result = await runSkillViaQueue(job, 120_000);
+              }
             } else {
               // Heavy tool: dispatch via BullMQ queue
               const job: ScrapeJob = {
@@ -328,7 +470,7 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              text: finalReply,
+              text: preprocessForTTS(finalReply),
               model_id: "eleven_turbo_v2_5",
               voice_settings: { stability: 0.45, similarity_boost: 0.8, speed: 1.1 },
             }),

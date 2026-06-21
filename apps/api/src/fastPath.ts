@@ -42,14 +42,17 @@ function detectIntent(raw: string): Intent | null {
   if (!t) return null;
   // Too long → likely nuanced; let the agent handle it.
   if (t.split(/\s+/).length > 14) return null;
+
+  // CSF check runs FIRST — "genera mi csf" / "genera la constancia" must not be
+  // blocked by the invoice-creation guard below (which also catches "genera").
+  if (/\b(regimen|constancia|csf|obligaci|domicilio fiscal|situacion fiscal|cp fiscal)\b/.test(t))
+    return "csf";
+
   // NEVER short-circuit invoice CREATION — generateInvoice has real side effects
   // and a confirmation flow. Defer anything that looks like "make/issue an invoice".
   if (/\b(facturar|facturame|emite|emiteme|emitir|genera|generar|crea|crear|haz|hazme|nueva\s+factura)\b/.test(t))
     return null;
   if (/\bfactura\s+a\s+\w/.test(t)) return null;
-
-  if (/\b(regimen|constancia|csf|obligaci|domicilio fiscal|situacion fiscal|cp fiscal)\b/.test(t))
-    return "csf";
   if (/\bproveedor/.test(t) || /quien(es)?\s+me\s+(factura|vende)/.test(t)) return "suppliers";
   if (/\bclientes?\b/.test(t) || /a\s+quien(es)?\s+(le\s+)?(mas\s+)?factur/.test(t)) return "clients";
   if (/recibidas?|me\s+factur|gastos?|deducib|compras?/.test(t)) return "received";
@@ -59,7 +62,7 @@ function detectIntent(raw: string): Intent | null {
 }
 
 /** Read stored invoices of a kind as Invoice[] (metadata is the Invoice shape). */
-async function invoicesFromDb(
+export async function invoicesFromDb(
   userId: string,
   rfc: string,
   kind: "emitted" | "received",
@@ -89,7 +92,7 @@ async function invoicesFromDb(
 }
 
 /** Latest stored CSF as a CSF object, or null. */
-async function csfFromDb(userId: string, rfc: string): Promise<CSF | null> {
+export async function csfFromDb(userId: string, rfc: string): Promise<CSF | null> {
   const where = [eq(documents.userId, userId), eq(documents.type, "csf"), isNull(documents.deletedAt)];
   if (rfc) where.push(eq(documents.rfc, rfc));
   const rows = await db()

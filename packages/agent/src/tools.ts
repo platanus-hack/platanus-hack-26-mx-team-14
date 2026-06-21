@@ -103,8 +103,11 @@ export const tools: Anthropic.Tool[] = [
   {
     name: "generateCSF",
     description:
-      "Download the user's Constancia de Situación Fiscal (CSF) and extract its " +
-      "fields (régimen, domicilio, obligaciones, distribución de régimen en caso de tener varios). Use to learn the user's fiscal profile. In general we want to give useful information to the user about their fiscal situation",
+      "Download the user's Constancia de Situación Fiscal (CSF) from the SAT portal " +
+      "and extract its fields (régimen, domicilio, obligaciones). " +
+      "IMPORTANT: ALWAYS call getFiscalProfile first. Only call generateCSF if getFiscalProfile " +
+      "returns no data, or the user EXPLICITLY asks for a fresh/updated constancia. " +
+      "This tool performs a real SAT login and takes ~30 seconds — never call it speculatively.",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
@@ -157,6 +160,144 @@ export const tools: Anthropic.Tool[] = [
     },
   },
   {
+    name: "renderWidget",
+    description:
+      "Genera una visualización dinámica (gráfica, tabla, métricas) para mostrarle al " +
+      "usuario en pantalla. Úsalo cuando el usuario pida 'una gráfica', 'un pie chart', " +
+      "'una tabla', 'una comparación visual', 'métricas', etc. Puedes llamarlo VARIAS VECES " +
+      "seguidas para mostrar múltiples gráficas apiladas. Los datos deben provenir de " +
+      "herramientas anteriores (getEmitedInvoices, getTopCounterparties, etc.) o de cálculos " +
+      "tuyos sobre esos datos. NUNCA inventes cifras; usa solo datos obtenidos en esta sesión.",
+    input_schema: {
+      type: "object",
+      properties: {
+        kind: {
+          type: "string",
+          enum: ["bar", "pie", "donut", "line", "area", "table", "metric"],
+          description: "Tipo de visualización",
+        },
+        title: { type: "string", description: "Título breve de la gráfica" },
+        subtitle: { type: "string", description: "Subtítulo o unidad (ej. 'MXN', 'Últimos 6 meses')" },
+        data: {
+          type: "array",
+          description: "Puntos de datos. Cada objeto DEBE tener 'label' (string) y 'value' (número). Puede tener campos adicionales.",
+          items: {
+            type: "object",
+            properties: {
+              label: { type: "string" },
+              value: { type: "number" },
+            },
+            required: ["label", "value"],
+            additionalProperties: true,
+          },
+          minItems: 1,
+          maxItems: 50,
+        },
+        series: {
+          type: "array",
+          items: { type: "string" },
+          description: "Para multi-serie (ej. ['emitido','recibido']): nombres de columnas numéricas adicionales en data",
+        },
+        color: { type: "string", description: "Color principal (OKLCH o hex). Opcional." },
+      },
+      required: ["kind", "data"],
+      additionalProperties: false,
+    },
+  },
+  // ── Generative UI components (Vercel AI SDK pattern) ──────────────────────
+  {
+    name: "displayRecommendations",
+    description:
+      "Muestra una tarjeta de recomendaciones fiscales con prioridad visual (alta/media/informativa). " +
+      "Úsalo cuando el usuario pida 'recomendaciones', 'consejos', 'qué debo hacer', 'cómo optimizo'. " +
+      "También úsalo proactivamente al final de comparaciones ingresos/gastos para dar 2-4 consejos concretos " +
+      "basados en los datos reales obtenidos en la sesión.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Título de la tarjeta (opcional, default: 'Recomendaciones fiscales')" },
+        recommendations: {
+          type: "array",
+          minItems: 1,
+          maxItems: 6,
+          items: {
+            type: "object",
+            properties: {
+              title: { type: "string", description: "Nombre corto de la recomendación" },
+              detail: { type: "string", description: "Explicación detallada del porqué (1-2 oraciones)" },
+              priority: { type: "string", enum: ["high", "medium", "low"], description: "high=urgente, medium=importante, low=informativo" },
+              action: { type: "string", description: "Acción específica que debe tomar el usuario (opcional)" },
+            },
+            required: ["title", "detail", "priority"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["recommendations"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "displayKpis",
+    description:
+      "Muestra tarjetas de KPI (métricas clave) en una cuadrícula. Úsalo para presentar 2-6 cifras " +
+      "importantes de forma visual: totales, promedios, saldos, conteos. Los valores DEBEN ser strings " +
+      "formateados (ej. '$45,000', '12 facturas', '18.5%'). " +
+      "Úsalo al resumir resultados de consultas de facturas o perfiles fiscales.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Título del grupo de KPIs (opcional)" },
+        kpis: {
+          type: "array",
+          minItems: 1,
+          maxItems: 6,
+          items: {
+            type: "object",
+            properties: {
+              title: { type: "string", description: "Etiqueta del KPI" },
+              value: { type: "string", description: "Valor formateado como string (ej. '$45,000 MXN', '12', '18.5%')" },
+              sub: { type: "string", description: "Subtexto explicativo (ej. '3 meses', 'Tasa efectiva', 'Vigentes')" },
+              tone: { type: "string", enum: ["emerald", "amber", "red"], description: "Color: emerald=positivo, amber=precaución, red=alerta" },
+            },
+            required: ["title", "value"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["kpis"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "displayFiscalSummary",
+    description:
+      "Muestra un resumen fiscal visual con ingresos, gastos, balance y estimaciones de IVA/ISR. " +
+      "Úsalo cuando tengas datos de facturas emitidas Y recibidas de un mismo periodo para dar un " +
+      "panorama fiscal completo. SIEMPRE calcula balance = ingresos - gastos. " +
+      "Si tienes los datos de IVA (16% de ingresos) e ISR (aprox 10-35% de utilidad), inclúyelos.",
+    input_schema: {
+      type: "object",
+      properties: {
+        summary: {
+          type: "object",
+          properties: {
+            period: { type: "string", description: "Periodo del resumen (ej. 'Junio 2025', 'Q1 2025', 'Últimos 6 meses')" },
+            ingresos: { type: "number", description: "Total ingresos (facturas emitidas) en MXN" },
+            gastos: { type: "number", description: "Total gastos (facturas recibidas) en MXN" },
+            balance: { type: "number", description: "ingresos - gastos en MXN" },
+            ivaFavor: { type: "number", description: "IVA acreditable estimado (opcional)" },
+            isrEstimado: { type: "number", description: "ISR mensual estimado (opcional)" },
+          },
+          required: ["period", "ingresos", "gastos", "balance"],
+          additionalProperties: false,
+        },
+      },
+      required: ["summary"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "extractTicketData",
     description:
       "Extrae datos estructurados de una imagen de ticket, recibo o nota de venta. " +
@@ -184,7 +325,8 @@ export const tools: Anthropic.Tool[] = [
 export const SYSTEM_PROMPT = `Eres SATI, el asistente fiscal de inteligencia artificial. Actúas SOLO a través de tus herramientas contra el SAT real del usuario; nunca inventes datos fiscales.
 
 Reglas:
-- MEMORIA PRIMERO: antes de consultar el SAT, usa searchHistory para ver si ya tienes el dato de una sesión previa. Si encuentras resultados relevantes, respóndelos al instante y menciona que provienen de consultas anteriores. Solo consulta el SAT si la memoria no basta o el usuario pide datos nuevos/actualizados.
+- MEMORIA PRIMERO: antes de consultar el SAT, usa searchHistory para ver si ya tienes el dato de una sesión previa. Si encuentras resultados relevantes, respóndelos al instante. Si NO encuentras datos en memoria y necesitas ir al SAT, DILE AL USUARIO antes: "No encontré esa información en tu historial, voy a consultarlo en el SAT..." y luego llama la herramienta correspondiente.
+- REGLA ABSOLUTA DE VISUALIZACIÓN: Si el usuario menciona "gráfica", "chart", "tabla", "pie", "barras", "línea", "área", "comparación visual", "métricas" o cualquier petición de ver algo visualmente → SIEMPRE llama a renderWidget. NUNCA respondas solo en texto cuando el usuario pida una visualización. Primero obtén los datos (facturas u otras herramientas), luego llama renderWidget con los datos transformados.
 - Para preguntas sobre principales clientes o proveedores (a quién factura más, quién le factura más), usa getTopCounterparties en vez de descargar facturas del SAT.
 - Para preguntas sobre el régimen fiscal, obligaciones o domicilio fiscal del usuario, usa getFiscalProfile (lee la CSF en memoria) antes de descargar la CSF con generateCSF. Si el usuario tiene VARIOS regímenes fiscales, menciónalos TODOS con su porcentaje/distribución cuando esté disponible; nunca reportes solo uno.
 - Para facturas, usa el rango de fechas más pequeño que implique el usuario; nunca excedas 12 meses por consulta.
@@ -193,6 +335,39 @@ Reglas:
 - Cuando conozcas el régimen del usuario (por una CSF previa), adapta el lenguaje y muestra solo lo relevante.
 - Si la imagen no es clara o legible, pide al usuario que envíe otra foto con mejor calidad.
 - Responde en español, claro y conciso, listo para ser hablado en voz alta.
+- VISUALIZACIONES: cuando el usuario pida una gráfica, tabla o comparación visual, usa renderWidget. Puedes llamarlo VARIAS VECES seguidas. Dos renderWidget consecutivos se muestran LADO A LADO en pantalla. Describe brevemente en texto lo que muestras.
+
+FLUJO OBLIGATORIO PARA GRÁFICA DE COMPARACIÓN INGRESOS VS GASTOS/EGRESOS:
+Paso 1 — obtén ambas listas de facturas para el periodo (si no las tienes aún):
+  • getEmitedInvoices(from, to)  → lista de facturas emitidas (ingresos)
+  • getReceiptInvoices(from, to) → lista de facturas recibidas (gastos/egresos)
+  Usa el rango que el usuario implique; si no especifica, usa los últimos 12 meses.
+Paso 2 — AGREGA por mes tú mismo (NO llames otra herramienta para esto):
+  Suma los "total" de cada factura agrupando por mes (YYYY-MM). Obtén ingresos_mes[] y gastos_mes[].
+Paso 3 — llama renderWidget UNA VEZ con kind="bar", series=["Ingresos","Gastos"] y data así:
+  [
+    { "label": "Ene 25", "value": SUMA_INGRESOS_ENE, "gastos": SUMA_GASTOS_ENE },
+    { "label": "Feb 25", "value": SUMA_INGRESOS_FEB, "gastos": SUMA_GASTOS_FEB },
+    ...
+  ]
+  REGLA CRÍTICA: el campo extra en cada data-point DEBE llamarse exactamente igual que la serie en minúsculas sin acentos (series[1]="Gastos" → clave "gastos"; series[1]="Egresos" → clave "egresos").
+Paso 4 — opcionalmente llama renderWidget una segunda vez con kind="metric" para totales (aparece al lado).
+Paso 5 — escribe 2-3 recomendaciones fiscales concretas basadas en los números reales.
+
+PARA GRÁFICAS SIMPLES (solo ingresos o solo gastos por mes):
+  Agrega las facturas por mes y llama renderWidget con kind="bar" o kind="area" y data=[{label, value}].
+
+PARA TABLAS DE FACTURAS:
+  Usa renderWidget con kind="table" y data con los campos que quieras mostrar (label=concepto/RFC, value=total, + campos extra como fecha, estado).
+
+- RECOMENDACIONES: al mostrar comparaciones fiscales o resultados de facturas, siempre llama displayRecommendations con 2-4 consejos específicos basados en los números reales (ej: si gastos > ingresos en algún mes, prioridad "high"; si hay pocos clientes, prioridad "medium").
+- KPIs: cuando respondas sobre totales, saldos o resúmenes numéricos, llama displayKpis para mostrar las cifras clave de forma visual antes del texto explicativo.
+- RESUMEN FISCAL: cuando tengas datos de ambos tipos de facturas (emitidas y recibidas) del mismo periodo, llama displayFiscalSummary para el panorama completo, luego renderWidget para la gráfica comparativa, luego displayRecommendations.
+- COMPONENTES DISPONIBLES (úsalos siempre que aplique):
+  • renderWidget → gráficas (bar, pie, donut, line, area), tablas de datos, métricas
+  • displayKpis → tarjetas de métricas clave (totales, saldos, conteos)
+  • displayFiscalSummary → resumen con ingresos/gastos/balance/IVA/ISR
+  • displayRecommendations → consejos fiscales con prioridad y acciones concretas
 
 RECEPTOR POR DEFECTO para facturas (Público en General):
 - RFC: XAXX010101000
