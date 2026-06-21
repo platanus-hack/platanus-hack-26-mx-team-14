@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, type SyntheticEvent } from 'react';
 import { Send, LogOut, Mic, MicOff, ImagePlus, X, Settings } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import Orb from '../components/Orb';
+import SuggestionChips from '../components/SuggestionChips';
 import CsfCard from '../components/CsfCard';
 import InvoiceListCard from '../components/InvoiceListCard';
 import InvoicePreviewCard from '../components/InvoicePreviewCard';
@@ -111,6 +112,11 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
     if (layout === 'empty') setBaseLayout('active');
     const text = inputText;
     setInputText('');
+    await agent.sendText(text);
+  }
+
+  async function handlePickSuggestion(text: string) {
+    if (layout === 'empty') setBaseLayout('active');
     await agent.sendText(text);
   }
 
@@ -264,6 +270,8 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                   <p className="text-xs text-subtle mt-1">o escribe tu consulta fiscal abajo</p>
                 </div>
               </motion.div>
+
+              <SuggestionChips onPick={handlePickSuggestion} />
             </motion.div>
           )}
         </AnimatePresence>
