@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type SyntheticEvent } from 'react';
-import { Send, LogOut, Mic, MicOff, ImagePlus, X } from 'lucide-react';
+import { Send, LogOut, Mic, MicOff, ImagePlus, X, Settings } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import Orb from '../components/Orb';
 import CsfCard from '../components/CsfCard';
@@ -8,6 +8,7 @@ import InvoicePreviewCard from '../components/InvoicePreviewCard';
 import Markdown from '../components/Markdown';
 import owlLogo from '../assets/owl-logo.png';
 import { useVoiceAgent } from '../hooks/useVoiceAgent';
+import { getUser } from '../lib/auth';
 import type { Page, SkillResult } from '../types';
 
 interface DashboardPageProps {
@@ -58,6 +59,7 @@ type LayoutState = 'empty' | 'active' | 'split';
 
 export default function DashboardPage({ onNavigate, onLogout }: DashboardPageProps) {
   const reduce = useReducedMotion();
+  const currentUser = getUser();
   // `baseLayout` drives the pre-content phase (empty ↔ active); once the agent
   // produces content the layout latches to 'split'. Deriving 'split' instead of
   // setting it in an effect avoids react-hooks/set-state-in-effect.
@@ -155,7 +157,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
             <span className="font-semibold text-ink text-sm tracking-tight">SATI</span>
           </button>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {/* Status pill */}
             <AnimatePresence mode="wait">
               <motion.div
@@ -189,6 +191,28 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                 {toolActivity ?? statusLabels[status]}
               </motion.div>
             </AnimatePresence>
+
+            {/* Authenticated user chip */}
+            {currentUser && (
+              <button
+                type="button"
+                onClick={() => onNavigate('settings')}
+                className="h-7 px-2.5 flex items-center gap-2 rounded-lg border border-border bg-surface text-xs text-muted hover:text-ink hover:bg-surface-hi transition-colors"
+                aria-label="Ir a configuración"
+              >
+                <span
+                  className="w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-semibold text-bg shrink-0 select-none"
+                  style={{ background: 'oklch(0.72 0.17 162)' }}
+                  aria-hidden="true"
+                >
+                  {(currentUser.displayName ?? currentUser.email ?? '?')[0]?.toUpperCase()}
+                </span>
+                <span className="hidden sm:block max-w-[120px] truncate">
+                  {currentUser.displayName ?? currentUser.email}
+                </span>
+                <Settings size={11} className="opacity-50" />
+              </button>
+            )}
 
             <button
               type="button"

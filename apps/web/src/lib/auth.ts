@@ -2,6 +2,7 @@ export interface AuthUser {
   id: string;
   email: string;
   displayName: string | null;
+  identificationCode?: string | null;
 }
 
 export function getToken(): string | null {

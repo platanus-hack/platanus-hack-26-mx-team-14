@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import LandingPage from './pages/LandingPage';
 import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
+import SettingsPage from './pages/SettingsPage';
 import { isAuthenticated, clearAuth } from './lib/auth';
 import type { Page } from './types';
 
@@ -21,7 +22,7 @@ export default function App() {
   }, []);
 
   function handleNavigate(next: Page) {
-    if (next === 'dashboard' && !isAuthenticated()) {
+    if ((next === 'dashboard' || next === 'settings') && !isAuthenticated()) {
       setPage('auth');
       return;
     }
@@ -68,6 +69,18 @@ export default function App() {
           transition={{ duration: 0.25 }}
         >
           <DashboardPage onNavigate={handleNavigate} onLogout={handleLogout} />
+        </motion.div>
+      )}
+
+      {page === 'settings' && (
+        <motion.div
+          key="settings"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.25 }}
+        >
+          <SettingsPage onNavigate={handleNavigate} onLogout={handleLogout} />
         </motion.div>
       )}
     </AnimatePresence>
