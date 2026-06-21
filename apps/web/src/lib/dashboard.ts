@@ -17,15 +17,16 @@ export interface KpiData {
 }
 
 export type Panel =
-  | { id: string; kind: 'csf'; size: PanelSize; title?: string; data: CSF }
+  | { id: string; kind: 'csf'; size: PanelSize; title?: string; query?: string; data: CSF }
   | {
       id: string;
       kind: 'invoices';
       size: PanelSize;
       title?: string;
+      query?: string;
       data: { invoices: Invoice[]; tipo: 'emitidas' | 'recibidas' };
     }
-  | { id: string; kind: 'kpi'; size: PanelSize; title: string; data: KpiData };
+  | { id: string; kind: 'kpi'; size: PanelSize; title: string; query?: string; data: KpiData };
 
 let _seq = 0;
 const newId = () => `panel-${Date.now()}-${_seq++}`;
@@ -38,10 +39,10 @@ const mxn = (n: number) =>
  * size. This is where "what the agent returned" becomes "what shows on the
  * canvas". Add a case here for each new skill/visualization.
  */
-export function resultToPanels(result: SkillResult): Panel[] {
+export function resultToPanels(result: SkillResult, query?: string): Panel[] {
   switch (result.skill) {
     case 'generateCSF':
-      return [{ id: newId(), kind: 'csf', size: 'lg', data: result.csf }];
+      return [{ id: newId(), kind: 'csf', size: 'xl', query, data: result.csf }];
 
     case 'getEmitedInvoices':
     case 'getReceiptInvoices': {
@@ -52,11 +53,12 @@ export function resultToPanels(result: SkillResult): Panel[] {
         {
           id: newId(),
           kind: 'kpi',
-          size: 'sm',
+          size: 'xl',
           title: tipo === 'emitidas' ? 'IVA trasladado' : 'IVA acreditable',
+          query,
           data: { value: mxn(iva), sub: `${vigentes.length} vigentes`, tone: 'emerald' },
         },
-        { id: newId(), kind: 'invoices', size: 'lg', data: { invoices: result.invoices, tipo } },
+        { id: newId(), kind: 'invoices', size: 'xl', query, data: { invoices: result.invoices, tipo } },
       ];
     }
 
@@ -65,8 +67,9 @@ export function resultToPanels(result: SkillResult): Panel[] {
         {
           id: newId(),
           kind: 'kpi',
-          size: 'md',
+          size: 'xl',
           title: result.status === 'previewed' ? 'Vista previa' : 'Factura emitida',
+          query,
           data:
             result.status === 'previewed'
               ? { value: mxn(result.preview.total), sub: 'Total a emitir', tone: 'amber' }

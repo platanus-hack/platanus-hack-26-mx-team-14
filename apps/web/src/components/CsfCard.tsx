@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { CalendarClock, MapPin, AlertTriangle, BadgeCheck, FileText } from 'lucide-react';
+import { CalendarClock, CalendarPlus, MapPin, AlertTriangle, BadgeCheck, FileText } from 'lucide-react';
 import type { CSF } from '../types';
 import {
   parseObligaciones,
@@ -8,6 +8,61 @@ import {
   regimenShort,
   type Urgency,
 } from '../lib/obligaciones';
+import ObligacionRings from './ObligacionRings';
+import ObligacionRibbon from './ObligacionRibbon';
+import type { ParsedObligacion } from '../lib/obligaciones';
+
+function icsDate(d: Date): string {
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('');
+}
+
+function exportToICS(obligaciones: ParsedObligacion[], nombre: string) {
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//SATI//Obligaciones Fiscales//ES',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+  ];
+
+  for (const o of obligaciones) {
+    if (!o.nextDue) continue;
+    const start = icsDate(o.nextDue);
+    const nextDay = new Date(o.nextDue);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const end = icsDate(nextDay);
+    const uid = `sati-${o.label.toLowerCase().replace(/\s+/g, '-')}-${start}@sati.mx`;
+
+    lines.push(
+      'BEGIN:VEVENT',
+      `DTSTART;VALUE=DATE:${start}`,
+      `DTEND;VALUE=DATE:${end}`,
+      `SUMMARY:${o.label} — Vencimiento fiscal`,
+      `DESCRIPTION:Obligación: ${o.label} (${o.cadence})\\nContribuyente: ${nombre}`,
+      `UID:${uid}`,
+      'BEGIN:VALARM',
+      'TRIGGER:-P2D',
+      'ACTION:DISPLAY',
+      `DESCRIPTION:Recordatorio: ${o.label} vence en 2 días`,
+      'END:VALARM',
+      'END:VEVENT',
+    );
+  }
+
+  lines.push('END:VCALENDAR');
+
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'obligaciones-fiscales.ics';
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 interface CsfCardProps {
   csf: CSF;
@@ -133,32 +188,24 @@ export default function CsfCard({ csf }: CsfCardProps) {
         </div>
       </div>
 
-      {/* ── TIMELINE DE OBLIGACIONES ──────────────────────────────── */}
+      {/* ── OBLIGACIONES: rings + ribbon ─────────────────────────── */}
       <div className="rounded-xl border border-border bg-surface p-5">
-        <p className="text-xs font-medium text-muted mb-4">Tus obligaciones</p>
-        <ul className="flex flex-col gap-1" role="list">
-          {obligaciones.map((o, i) => {
-            const s = urgency[o.urgency];
-            return (
-              <motion.li
-                key={`${o.label}-${i}`}
-                {...(reduce ? {} : { initial: { opacity: 0, x: -8 }, animate: { opacity: 1, x: 0 } })}
-                transition={{ delay: 0.05 * i, duration: 0.3 }}
-                className="flex items-center gap-3 py-3 border-b border-border last:border-0"
-              >
-                <span className={`w-2 h-2 rounded-full shrink-0 ${s.dot}`} aria-hidden="true" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-ink truncate">{o.label}</p>
-                  <p className="text-xs text-subtle capitalize">{o.cadence}</p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-sm text-ink">{formatDueDate(o.nextDue)}</p>
-                  <p className={`text-xs ${s.text}`}>{o.countdown}</p>
-                </div>
-              </motion.li>
-            );
-          })}
-        </ul>
+        <div className="flex items-center justify-between mb-5">
+          <p className="text-sm font-semibold text-ink">Tus obligaciones</p>
+          <button
+            type="button"
+            onClick={() => exportToICS(obligaciones, csf.nombre)}
+            className="flex items-center gap-1.5 text-[11px] text-muted hover:text-emerald transition-colors"
+            aria-label="Exportar obligaciones al calendario"
+          >
+            <CalendarPlus size={13} aria-hidden="true" />
+            Exportar al calendario
+          </button>
+        </div>
+        <ObligacionRings obligaciones={obligaciones} />
+        <div className="mt-6 pt-5" style={{ borderTop: '1px solid oklch(0.22 0.008 257 / 0.5)' }}>
+          <ObligacionRibbon obligaciones={obligaciones} />
+        </div>
       </div>
     </motion.div>
   );

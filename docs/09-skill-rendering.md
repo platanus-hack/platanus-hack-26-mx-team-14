@@ -1,3 +1,4 @@
+
 # 09 — Skill rendering: qué preguntamos y qué nos contesta
 
 Guía para el equipo. Explica **qué le pedimos al agente** (frases que el usuario

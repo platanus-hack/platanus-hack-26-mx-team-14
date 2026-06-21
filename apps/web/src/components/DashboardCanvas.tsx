@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { X } from 'lucide-react';
+import { X, MessageSquare } from 'lucide-react';
 import type { Panel, PanelSize } from '../lib/dashboard';
 import CsfCard from './CsfCard';
 import InvoiceList from './InvoiceList';
@@ -57,6 +57,12 @@ export default function DashboardCanvas({ panels, onRemove }: DashboardCanvasPro
               >
                 <X size={12} aria-hidden="true" />
               </button>
+            )}
+            {panel.query && (
+              <div className="flex items-center gap-2 mb-3">
+                <MessageSquare size={13} className="text-muted shrink-0" aria-hidden="true" />
+                <span className="text-sm text-muted truncate">"{panel.query}"</span>
+              </div>
             )}
             <PanelContent panel={panel} />
           </motion.div>

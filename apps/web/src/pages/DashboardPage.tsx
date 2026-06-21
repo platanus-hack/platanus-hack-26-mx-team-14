@@ -76,7 +76,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
     onStatus: setOrbState,
     onTranscript: () => { if (typewriterRef.current) clearTimeout(typewriterRef.current); setDisplayText(''); },
     onReply: (text) => typeText(text),
-    onSkill: (result) => setPanels((prev) => [...prev, ...resultToPanels(result)]),
+    onSkill: (result) => setPanels((prev) => [...resultToPanels(result), ...prev]),
     onError: (msg) => { setOrbState('idle'); typeText(msg); },
   });
 
@@ -104,7 +104,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
       // ACCUMULATE — we never replace what's already on the canvas.
       Promise.all([runSkill(skill), delay(1300)])
         .then(([res]) => {
-          setPanels((prev) => [...prev, ...resultToPanels(res)]);
+          setPanels((prev) => [...resultToPanels(res, query), ...prev]);
           speak(replyFor(res));
         })
         .catch(() => speak('No pude obtener la información. Intenta de nuevo.'));
