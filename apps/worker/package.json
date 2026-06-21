@@ -7,6 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:playwright --external:sharp --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\"",
     "start": "node dist/index.js",
+    "rag:backfill": "tsx src/backfill-embeddings.ts",
     "typecheck": "tsc --noEmit",
     "lint": "echo ok"
   },
@@ -14,6 +15,7 @@
     "@sat/shared": "workspace:*",
     "@sat/events": "workspace:*",
     "@sat/db": "workspace:*",
+    "@sat/rag": "workspace:*",
     "@sat/scraper": "workspace:*",
     "bullmq": "^5.28.1",
     "ioredis": "^5.4.1",

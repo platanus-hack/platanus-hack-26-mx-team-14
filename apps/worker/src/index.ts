@@ -9,6 +9,7 @@ import {
 } from "@sat/events";
 import { runSkill } from "@sat/scraper";
 import { loadCredential } from "./credentials.js";
+import { startEmbedWorker } from "./embed.js";
 
 const connection = new IORedis({ ...env.redis, maxRetriesPerRequest: null });
 const publisher = new IORedis({ ...env.redis, maxRetriesPerRequest: null });
@@ -71,6 +72,9 @@ const worker = new Worker<ScrapeJob, SkillResult>(
 
 worker.on("completed", (job) => logger.info({ jobId: job.id }, "scrape completed"));
 worker.on("failed", (job, err) => logger.error({ jobId: job?.id, err }, "scrape failed"));
+
+// RAG memory write path — vectorizes + persists tool results (separate queue).
+startEmbedWorker();
 
 logger.info(
   { driver: env.SAT_DRIVER, queue: QUEUES.scrape, keyFp: keyFingerprint(), debugCreds: env.DEBUG_CREDS },
