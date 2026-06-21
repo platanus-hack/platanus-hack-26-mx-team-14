@@ -146,6 +146,9 @@ services:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       # Playwright: run Chromium in no-sandbox mode inside Docker
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+      # Run non-headless under Xvfb (see Dockerfile.worker) so the SAT doesn't log us
+      # out on the CSF download — matches local `test:skill HEADED=1` behavior.
+      - SAT_HEADFUL=1
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

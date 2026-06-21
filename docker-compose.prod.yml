@@ -68,6 +68,9 @@ services:
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - SAT_DRIVER=playwright
       - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+      # Non-headless under Xvfb (see Dockerfile.worker): the SAT logs a headless
+      # browser out on the CSF download click. Keep this set on Render's worker too.
+      - SAT_HEADFUL=1
     shm_size: 256MB
     depends_on:
       redis:
