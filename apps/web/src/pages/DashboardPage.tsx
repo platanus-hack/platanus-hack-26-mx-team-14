@@ -77,6 +77,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
   const [baseLayout, setBaseLayout] = useState<Exclude<LayoutState, 'split'>>('empty');
   const [inputText, setInputText] = useState('');
   const [isDragging, setIsDragging] = useState(false);
+  const [dropError, setError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const contentPanelRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -522,7 +523,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
 
                     {/* Error */}
                     <AnimatePresence>
-                      {error && (
+                      {(error || dropError) && (
                         <motion.p
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
@@ -530,7 +531,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                           className="text-xs text-red-400 bg-red-950/30 border border-red-900/40 rounded-xl px-4 py-3"
                           role="alert"
                         >
-                          {error}
+                          {error || dropError}
                         </motion.p>
                       )}
                     </AnimatePresence>
