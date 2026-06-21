@@ -79,11 +79,17 @@ export async function publicLlmAuthRoutes(app: FastifyInstance) {
     };
 
     // ── 1. Verificar / establecer autenticación ───────────────────────────────
-    let caller = callId ? await resolveCaller(callId) : null;
+    // Intenta Redis primero; si falla (sin callId, Redis caído) busca el código
+    // en el historial de mensajes para no ciclar entre turnos.
+    let caller = callId ? await resolveCaller(callId).catch(() => null) : null;
 
     if (!caller) {
-      const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
-      const code = lastUserMsg ? extractCode(lastUserMsg.content) : null;
+      // Busca cualquier código de 6 dígitos en mensajes del usuario (más reciente primero)
+      const code = [...messages]
+        .reverse()
+        .filter((m) => m.role === "user")
+        .map((m) => extractCode(m.content))
+        .find((c) => c !== null) ?? null;
 
       if (code) {
         const userRows = await db()
@@ -94,7 +100,7 @@ export async function publicLlmAuthRoutes(app: FastifyInstance) {
         const user = userRows[0];
 
         if (!user) {
-          return sendReply("Ese código no coincide con ninguna cuenta. Por favor verifica tu código en la sección de Configuración de la plataforma SATI.");
+          return sendReply("Código incorrecto. Por favor verifica tus seis dígitos.");
         }
 
         const credRows = await db()
@@ -105,17 +111,23 @@ export async function publicLlmAuthRoutes(app: FastifyInstance) {
         const cred = credRows[0];
 
         if (!cred) {
-          return sendReply("Tu cuenta no tiene credenciales del SAT configuradas. Por favor configúralas en la plataforma antes de continuar.");
+          return sendReply("Tu cuenta no tiene credenciales del SAT configuradas.");
         }
 
         caller = { userId: user.id, credentialId: cred.id, rfc: cred.rfc };
-        if (callId) await setCaller(callId, caller);
+        if (callId) await setCaller(callId, caller).catch(() => {});
 
-        return sendReply(`Autenticado. Hola ${user.displayName ?? ""}. ¿En qué te puedo ayudar hoy?`);
+        // Solo decir "Autenticado" la primera vez; si ya está en el historial, continuar directo
+        const alreadyAuthed = messages.some(
+          (m) => m.role === "assistant" && typeof m.content === "string" && m.content.startsWith("Autenticado"),
+        );
+        if (!alreadyAuthed) {
+          return sendReply(`Autenticado. Hola ${user.displayName ?? ""}. ¿En qué te puedo ayudar hoy?`);
+        }
+        // Ya autenticado en historial: cae al loop del agente con caller listo
+      } else {
+        return sendReply("Por favor dime tus seis dígitos.");
       }
-
-      // Sin código todavía: pedir el código con mensaje fijo (evita que Claude invente contexto del SAT)
-      return sendReply("Hola, soy SATI. Por favor dime tu código de identificación de 6 dígitos.");
     }
 
     // ── 2. Loop de agente — copia exacta de /agent/voice-turn ────────────────
