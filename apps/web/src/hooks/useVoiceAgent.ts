@@ -321,7 +321,9 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
     if ((!text.trim() && !attachedImage) || statusRef.current === 'processing') return;
     const image = attachedImage;
     setAttachedImage(null);
-    setMessages(prev => [...prev, { role: 'user', content: text || 'Analiza esta imagen', image: image ?? undefined }]);
+    const userMessage: AgentMessage = { role: 'user', content: text || 'Analiza esta imagen', image: image ?? undefined };
+    messagesRef.current = [...messagesRef.current, userMessage];
+    setMessages(messagesRef.current);
     setS('processing');
     setToolActivity(null);
     await runAgentTurn({ text: text || 'Analiza esta imagen', image });
