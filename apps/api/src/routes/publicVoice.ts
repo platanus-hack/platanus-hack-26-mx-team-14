@@ -1,21 +1,24 @@
 import { PassThrough } from "node:stream";
 import type { FastifyInstance } from "fastify";
+import type Anthropic from "@anthropic-ai/sdk";
 import { env } from "@sat/shared";
-import { makeAnthropic } from "@sat/agent";
+import { makeAnthropic, tools } from "@sat/agent";
+import type { SkillName } from "@sat/events";
+import { fixtureFor } from "../voiceFixtures.js";
 
-const SAT_EXPERT_PROMPT = `Eres SATI, un asistente fiscal virtual experto en el SAT de México. Estás en la demo pública de SATI.
+// Voice agent prompt: it executes skills via tools, then NARRATES the result so
+// the spoken explanation and the on-screen visualization come from one turn.
+const VOICE_AGENT_PROMPT = `Eres SATI, un asistente fiscal de México, en una demo por voz.
 
-En esta demo NO tienes acceso a datos fiscales reales del usuario. Si preguntan por sus facturas, declaraciones o datos concretos del SAT, invítalos amablemente a crear una cuenta gratuita en SATI para conectarse con el SAT real.
+Cuando el usuario pida ver sus facturas (emitidas o recibidas), su constancia / régimen / obligaciones, o generar una factura, LLAMA la herramienta correspondiente. Los datos de esta demo son de ejemplo.
 
-Puedes responder con conocimiento general sobre:
-- Regímenes fiscales: RESICO, Actividad Empresarial, Personas Morales, asalariados, arrendamiento
-- CFDI y facturas: tipos (ingreso, gasto, traslado, nómina), cancelaciones, complementos
-- Impuestos: IVA 16%, ISR, retenciones, PTU, pagos provisionales
-- Fechas clave: declaraciones mensuales (día 17), declaración anual (abril PF, marzo PM), DIOT
-- Trámites SAT: RFC, e.firma, buzón tributario, CSF, cambios de régimen
-- Multas, EFOS, listas negras, auditorías y actos de fiscalización
+Después de recibir el resultado de una herramienta, EXPLÍCALO hablado, en español mexicano, en 1 o 2 oraciones cortas, mencionando las cifras concretas (totales, IVA, próximo vencimiento). No leas listas ni markdown ni caracteres especiales — habla como un contador que resume de un vistazo.
 
-Responde en español mexicano, tono amigable y profesional. TU RESPUESTA SE CONVIERTE A VOZ: máximo 2 oraciones cortas y directas, sin listas ni markdown ni caracteres especiales.`;
+Si el usuario solo conversa o pregunta algo general del SAT, responde breve como experto e invítalo a pedir sus facturas o su constancia.
+
+generateInvoice: genera SOLO la vista previa (confirmed=false) y describe el total a emitir; NUNCA emitas de verdad en la demo.
+
+TU RESPUESTA SE CONVIERTE A VOZ: máximo 2 oraciones, directas, sin enumeraciones.`;
 
 type Message = { role: "user" | "assistant"; content: string };
 
@@ -82,30 +85,61 @@ export async function publicVoiceRoutes(app: FastifyInstance) {
       // Send transcript immediately — frontend shows user text right away
       send({ type: "transcript", userText });
 
-      // 2 — Claude streaming (send text as it arrives)
+      // 2 — Claude tool-calling loop. The agent may call a skill (→ `skill`
+      // event drives the visualization) and then narrates the result (→ `text`,
+      // which becomes the TTS below). Both come from the same turn.
       let assistantText = "";
-      const messages: Message[] = [
-        ...history.slice(-6),
+      const messages: Anthropic.MessageParam[] = [
+        ...history.slice(-6).map((m) => ({ role: m.role, content: m.content })),
         { role: "user", content: userText },
       ];
 
-      const claudeStream = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 120,
-        system: SAT_EXPERT_PROMPT,
-        messages,
-        stream: true,
-      });
+      for (let i = 0; i < 4; i++) {
+        const res = await anthropic.messages.create({
+          model: "claude-sonnet-4-6",
+          max_tokens: 512,
+          system: VOICE_AGENT_PROMPT,
+          tools,
+          messages,
+        });
+        messages.push({ role: "assistant", content: res.content });
 
-      for await (const event of claudeStream) {
-        if (
-          event.type === "content_block_delta" &&
-          event.delta.type === "text_delta"
-        ) {
-          assistantText += event.delta.text;
-          send({ type: "text", chunk: event.delta.text });
+        if (res.stop_reason !== "tool_use") {
+          const text = res.content.find((c) => c.type === "text");
+          assistantText = text && "text" in text ? text.text : "";
+          break;
         }
+
+        // Run each requested skill against demo fixtures, emit the structured
+        // result so the frontend renders the panel, and feed it back to Claude.
+        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+        for (const block of res.content) {
+          if (block.type !== "tool_use") continue;
+          try {
+            // Public demo: skills run against fixtures (no SAT credentials here).
+            const result = fixtureFor(
+              block.name as SkillName,
+              block.input as Record<string, unknown>,
+            );
+            send({ type: "skill", result });
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: block.id,
+              content: JSON.stringify(result),
+            });
+          } catch (err) {
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: block.id,
+              content: `Error: ${(err as Error).message}`,
+              is_error: true,
+            });
+          }
+        }
+        messages.push({ role: "user", content: toolResults });
       }
+
+      if (assistantText) send({ type: "text", chunk: assistantText });
 
       // 3 — TTS with turbo model + streaming (send audio chunks as they arrive)
       const voiceId = env.ELEVENLABS_VOICE_ID.replace(/^['"]|['"]$/g, "");
@@ -190,7 +224,7 @@ export async function publicVoiceRoutes(app: FastifyInstance) {
     const claudeRes = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 120,
-      system: SAT_EXPERT_PROMPT,
+      system: VOICE_AGENT_PROMPT,
       messages,
     });
 

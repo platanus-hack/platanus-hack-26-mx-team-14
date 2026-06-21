@@ -431,7 +431,7 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
             break;
           case 'done': {
             if (assistantAcc) {
-              const updated = [...messagesRef.current, { role: 'assistant', content: assistantAcc }];
+              const updated = [...messagesRef.current, { role: 'assistant' as const, content: assistantAcc }];
               messagesRef.current = updated;
               setMessages(updated);
               setStreamText('');

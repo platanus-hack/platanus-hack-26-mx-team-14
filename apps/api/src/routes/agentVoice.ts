@@ -135,7 +135,7 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
 
       // Detailed logging for first image (debug why extraction might fail)
       if (imageCount > 0) {
-        const firstImageMsg = imageMessages[0];
+        const firstImageMsg = imageMessages[0]!;
         const imageBlocks = Array.isArray(firstImageMsg.content)
           ? firstImageMsg.content.filter((b) => b.type === "image")
           : [];

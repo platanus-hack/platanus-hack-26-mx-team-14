@@ -33,12 +33,12 @@ export interface CSF {
 }
 
 export interface Invoice {
-  uuid: string;
+  uuid: string; // folio fiscal
   rfcEmisor: string;
   rfcReceptor: string;
   nombreEmisor?: string;
   nombreReceptor?: string;
-  fechaEmision: string;
+  fechaEmision: string; // ISO
   subtotal: number;
   iva?: number;
   total: number;
@@ -61,6 +61,12 @@ export interface IssuedInvoice {
   xmlArtifactId?: string;
 }
 
+export type SkillName =
+  | 'getEmitedInvoices'
+  | 'getReceiptInvoices'
+  | 'generateCSF'
+  | 'generateInvoice';
+
 export interface TicketExtraction {
   tipoDocumento: 'ticket' | 'factura' | 'nota_venta' | 'recibo' | 'otro';
   emisor?: { nombre?: string; rfc?: string };
@@ -73,6 +79,7 @@ export interface TicketExtraction {
   observaciones?: string;
 }
 
+/** Discriminated union of what a skill run returns (mirror @sat/events). */
 export type SkillResult =
   | { skill: 'getEmitedInvoices'; invoices: Invoice[] }
   | { skill: 'getReceiptInvoices'; invoices: Invoice[] }

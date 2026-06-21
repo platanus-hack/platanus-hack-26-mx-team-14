@@ -7,9 +7,14 @@ import SettingsPage from './pages/SettingsPage';
 import { isAuthenticated, clearAuth } from './lib/auth';
 import type { Page } from './types';
 
+// Demo/dev bypass: when VITE_SKIP_AUTH=true (set by docker-compose), the app
+// boots straight into the dashboard so you can talk to the agent without SAT
+// credentials. The dashboard runs on fixtures, so no real auth is needed.
+const SKIP_AUTH = import.meta.env.VITE_SKIP_AUTH === 'true';
+
 export default function App() {
   const [page, setPage] = useState<Page>(() =>
-    isAuthenticated() ? 'dashboard' : 'landing',
+    SKIP_AUTH || isAuthenticated() ? 'dashboard' : 'landing',
   );
 
   useEffect(() => {
@@ -22,7 +27,7 @@ export default function App() {
   }, []);
 
   function handleNavigate(next: Page) {
-    if ((next === 'dashboard' || next === 'settings') && !isAuthenticated()) {
+    if ((next === 'dashboard' || next === 'settings') && !SKIP_AUTH && !isAuthenticated()) {
       setPage('auth');
       return;
     }

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
+  "exports": { ".": "./src/index.ts", "./mocks": "./src/mocks.ts" },
   "types": "./src/index.ts",
   "scripts": { "typecheck": "tsc --noEmit", "lint": "echo ok" },
   "dependencies": { "zod": "^3.23.8" },
