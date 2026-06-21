@@ -66,8 +66,10 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
   // setting it in an effect avoids react-hooks/set-state-in-effect.
   const [baseLayout, setBaseLayout] = useState<Exclude<LayoutState, 'split'>>('empty');
   const [inputText, setInputText] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const contentPanelRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const agent = useVoiceAgent();
   const { status, messages, streamText, thinkingText, toolActivity, skillResult, error, sessionActive, attachedImage, attachImage, detachImage } = agent;
@@ -124,6 +126,34 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
     const file = e.target.files?.[0];
     if (file) attachImage(file);
     e.target.value = '';
+  }
+
+  function handleDragOver(e: React.DragEvent<HTMLFormElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent<HTMLFormElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLFormElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      if (file.type.startsWith('image/')) {
+        attachImage(file);
+      } else {
+        setError('Por favor arrastra una imagen válida (JPG, PNG, GIF, WebP)');
+      }
+    }
   }
 
   function handleMicClick() {
@@ -531,9 +561,31 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
         />
 
         <form
+          ref={formRef}
           onSubmit={handleSend}
-          className="max-w-2xl mx-auto flex flex-col gap-2 bg-surface/90 backdrop-blur-md border border-border rounded-2xl px-4 py-3 transition-[border-color] duration-200 focus-within:border-emerald/40"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`max-w-2xl mx-auto flex flex-col gap-2 bg-surface/90 backdrop-blur-md border rounded-2xl px-4 py-3 transition-all duration-200 ${
+            isDragging
+              ? 'border-emerald/60 bg-emerald/5 shadow-lg shadow-emerald/10'
+              : 'border-border focus-within:border-emerald/40'
+          }`}
         >
+          {/* Drag & drop hint */}
+          <AnimatePresence>
+            {isDragging && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="text-center py-2 text-xs text-emerald/60 font-medium"
+              >
+                📸 Suelta la imagen aquí
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Image preview */}
           <AnimatePresence>
             {attachedImage && (

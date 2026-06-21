@@ -25,7 +25,17 @@ export class PlaywrightDriver implements BrowserDriver {
     //                   so the worker/prod must run non-headless to match local behavior.
     const isOn = (v: string | undefined) => v === "1" || v === "true";
     const visible = isOn(process.env.HEADED);
-    const headful = visible || isOn(process.env.SAT_HEADFUL);
+    let headful = visible || isOn(process.env.SAT_HEADFUL);
+
+    // Safety: if we're trying to run headful but there's no X server, force headless
+    // (Xvfb not available or not set up). This prevents "Missing X server" crashes.
+    if (headful && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+      console.warn(
+        "[Playwright] SAT_HEADFUL=1 but no X11/Wayland display available. " +
+        "Forcing headless mode. Install Xvfb or set DISPLAY to run headed browser."
+      );
+      headful = false;
+    }
     this.browser = await chromium.launch({
       headless: !headful,
       slowMo: visible ? 250 : 0,
@@ -39,6 +49,12 @@ export class PlaywrightDriver implements BrowserDriver {
         "--disable-default-apps",
         "--no-first-run",
         "--no-zygote",                // reduces child process overhead in constrained envs
+        // Headless server fixes (no X11, no D-Bus)
+        "--disable-crash-reporter",
+        "--disable-component-update",
+        "--disable-default-apps",
+        "--disable-sync",
+        "--metrics-recording-only",
         // Anti-automation: the SAT invalidates the session right after login on Linux
         // (bounces to /iniciar-sesion) but not on macOS. These hide the most common
         // automation tells so the portal treats us like a normal Chrome.

@@ -7,6 +7,7 @@ import {
 } from "@sat/events";
 import type { AgentAction } from "@sat/events";
 import { type DriverName, makeDriver, resolveDriver } from "./driver-factory.js";
+import type { Session } from "./types.js";
 import { dumpFailure } from "./diagnostics.js";
 import type { FlowContext } from "./flows/context.js";
 import { getEmitedInvoices } from "./flows/getEmitedInvoices.js";
@@ -88,18 +89,36 @@ export async function runSkill(args: RunSkillArgs): Promise<SkillResult> {
     log.info({ driver: driver.name }, "running skill");
 
     const startedAt = Date.now();
-    const session = await driver.createSession({ rfc, correlationId });
-    const ctx: FlowContext = {
-      session,
-      credential,
-      correlationId,
-      userId,
-      rfc,
-      log,
-      emit: args.emit,
-    };
+    let session: Session | null = null;
 
     try {
+      // Retry session creation up to 2 times (Playwright may fail to start browser)
+      let lastSessionErr: Error | null = null;
+      for (let sessionAttempt = 0; sessionAttempt < 2; sessionAttempt++) {
+        try {
+          session = await driver.createSession({ rfc, correlationId });
+          break; // Success, exit retry loop
+        } catch (err) {
+          lastSessionErr = err as Error;
+          log.warn(
+            { attempt: sessionAttempt + 1, err: lastSessionErr.message },
+            "failed to create session, retrying...",
+          );
+          if (sessionAttempt === 1) throw lastSessionErr; // Last attempt, throw
+          await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait before retry
+        }
+      }
+
+      const ctx: FlowContext = {
+        session: session!,
+        credential,
+        correlationId,
+        userId,
+        rfc,
+        log,
+        emit: args.emit,
+      };
+
       const result = await runFlow(ctx);
       log.info({ driver: driver.name, ms: Date.now() - startedAt }, "skill finished");
       return result;
@@ -109,10 +128,10 @@ export async function runSkill(args: RunSkillArgs): Promise<SkillResult> {
         { driver: driver.name, ms: Date.now() - startedAt, err: (err as Error).message },
         "skill failed",
       );
-      await dumpFailure(session, correlationId, skill);
+      if (session) await dumpFailure(session, correlationId, skill);
       throw err;
     } finally {
-      await session.close().catch(() => void 0);
+      if (session) await session.close().catch(() => void 0);
     }
   }
 

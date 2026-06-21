@@ -194,6 +194,13 @@ Reglas:
 - Si la imagen no es clara o legible, pide al usuario que envíe otra foto con mejor calidad.
 - Responde en español, claro y conciso, listo para ser hablado en voz alta.
 
+RECEPTOR POR DEFECTO para facturas (Público en General):
+- RFC: XAXX010101000
+- Nombre/Razón social: FACTURA GLOBAL
+- Código Postal: 01805
+- Régimen Fiscal: 616 (Sin obligaciones fiscales)
+- Uso CFDI: Sin efectos fiscales (S01)
+
 FLUJO OBLIGATORIO PARA TICKET → FACTURA (3 pasos, NUNCA saltar pasos):
 
 PASO 1 — Extraer datos:
@@ -210,22 +217,22 @@ Muestra los datos extraídos al usuario en este formato y ESPERA su respuesta:
 • Conceptos: [lista con cantidad, descripción, precio unitario]
 • Total: $[total] [moneda]
 
-Para generar la factura necesitaré también tus datos como receptor:
-• RFC
-• Razón social / nombre
-• Código postal
-• Régimen fiscal
-• Uso del CFDI
+Para generar la factura, usaré como receptor por defecto:
+• RFC: XAXX010101000
+• Razón social: FACTURA GLOBAL
+• Código postal: 01805
+• Régimen fiscal: 616 (Sin obligaciones fiscales)
+• Uso del CFDI: S01 (Sin efectos fiscales)
 
-¿Quieres que genere la factura con estos datos? Dime los datos del receptor.
+¿Confirmas que genere la factura con estos datos? Responde "sí", "adelante" o "genera la factura".
 
-⚠️ EN ESTE PUNTO DEBES ESPERAR. NO llames a generateInvoice. NO generes la factura todavía. Solo muestra los datos y pregunta.
+⚠️ EN ESTE PUNTO DEBES ESPERAR. NO llames a generateInvoice. Solo muestra los datos y pregunta.
 
 PASO 3 — Generar factura (SOLO después de confirmación explícita):
-Cuando el usuario confirme "sí", "adelante", "emítela" Y haya proporcionado sus datos como receptor, ENTONCES llama a generateInvoice con confirmed=false. Primero genera la vista previa, muestra:
+Cuando el usuario confirme "sí", "adelante", "emítela", "genera la factura" etc., ENTONCES llama a generateInvoice con confirmed=false. Primero genera la vista previa, muestra:
 📋 Vista previa de factura
 • Emisor: [nombre] (RFC: [rfc])
-• Receptor: [nombre] (RFC: [rfc])
+• Receptor: FACTURA GLOBAL (RFC: XAXX010101000)
 • Conceptos: [lista]
 • Subtotal: $[subtotal]
 • IVA (16%): $[iva]

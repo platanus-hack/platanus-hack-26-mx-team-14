@@ -106,14 +106,20 @@ export function buildInvoicePayload(input: BuildInvoiceInput): GenerateInvoiceIn
   const tipo = detectReceptorType(rfc);
   const esGenerico = tipo === "publico_en_general";
 
-  const nombre = input.nombreReceptor.trim().toUpperCase();
+  let nombre = input.nombreReceptor.trim().toUpperCase();
+
+  // For público en general: if name is "PÚBLICO EN GENERAL", clear it (SAT will auto-fill)
+  // This avoids requiring facturaGlobal for simple invoices
+  if (esGenerico && (nombre === "PUBLICO EN GENERAL" || nombre === "PÚBLICO EN GENERAL")) {
+    nombre = "";
+  }
+
   const codigoPostal = input.codigoPostal ?? "01000";
   const regimenFiscal = input.regimenFiscalReceptor ?? defaultRegimen(tipo);
   const usoCFDI = input.usoCFDI ?? defaultUsoCfdi(tipo);
 
-  // For publico en general with "PUBLICO EN GENERAL" name, we need facturaGlobal
-  const esPublicoGeneral =
-    esGenerico && (nombre === "PUBLICO EN GENERAL" || nombre === "PÚBLICO EN GENERAL");
+  // For publico en general with empty name, no facturaGlobal needed
+  const esPublicoGeneral = esGenerico && nombre === "PUBLICO EN GENERAL";
 
   const conceptos: Concepto[] = input.conceptos.map((c) => ({
     claveProdServ: c.claveProdServ ?? "01010101", // Genérico: Productos

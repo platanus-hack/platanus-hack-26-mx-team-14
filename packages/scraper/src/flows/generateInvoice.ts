@@ -11,6 +11,18 @@ import { type FlowContext, step } from "./context.js";
 const RFC_GENERICO_NACIONAL = "XAXX010101000";
 const RFC_GENERICO_EXTRANJERO = "XEXX010101000";
 
+/** Default receptor for ticket-to-invoice conversion (Público en General) */
+const DEFAULT_RECEPTOR = {
+  rfc: "XAXX010101000",
+  // "FACTURA GLOBAL" is the proven name for the genérico RFC: the SAT form requires a
+  // non-empty Nombre, and unlike "PÚBLICO EN GENERAL" it does NOT trigger CFDI 4.0's
+  // Información Global requirement — so it works for a normal single-concept invoice.
+  nombre: "FACTURA GLOBAL",
+  codigoPostal: "01805",
+  regimen: "616",  // Sin obligaciones fiscales
+  uso: "S01",  // Sin efectos fiscales
+} as const;
+
 /**
  * Dismiss any Bootstrap error modal that might be blocking pointer events.
  * The SAT portal sometimes shows #modal-error with data-backdrop="static"
@@ -55,10 +67,20 @@ async function clickWithErrorDismiss(session: Session, selector: string): Promis
   try {
     await session.click(selector);
   } catch (err) {
-    // Check if it's a "intercepts pointer events" timeout (modal blocking).
-    if ((err as Error).message?.includes("intercepts pointer events")) {
+    const msg = (err as Error).message ?? "";
+    // A click can time out because a modal intercepts pointer events OR because an
+    // (error/loading) modal sits on top without Playwright naming it. Either way, our
+    // best recovery is the same: dismiss any modal, wait for loading splashes to clear,
+    // then retry once. Surface the selector so a genuine failure is debuggable.
+    const isTimeout = msg.includes("intercepts pointer events") || msg.includes("Timeout");
+    if (isTimeout) {
       await dismissErrorModals(session);
-      await session.click(selector); // Retry; let it fail if modal is still there
+      await session.waitForHidden(SEL.factura.loadingModal).catch(() => void 0);
+      try {
+        await session.click(selector);
+      } catch (retryErr) {
+        throw new Error(`click failed on "${selector}": ${(retryErr as Error).message}`);
+      }
     } else {
       throw err;
     }
@@ -113,17 +135,11 @@ export function validateInvoiceInput(input: GenerateInvoiceInput): void {
   }
 
   if (esGenerico) {
-    // CFDI 4.0: InformacionGlobal (factura global) is required ONLY when the genérico
-    // RFC is paired with Nombre "PÚBLICO EN GENERAL". Using a different Nombre (e.g.
-    // "FACTURA GLOBAL") makes it a normal invoice — no InformacionGlobal needed.
+    // CFDI 4.0: For público en general (genérico RFC), validate name and régimen/uso.
+    // "PÚBLICO EN GENERAL" requires facturaGlobal, so we auto-correct to "FACTURA GLOBAL"
+    // which is a valid alternate name that does NOT require facturaGlobal.
     const nombre = input.receptor.nombreRazonSocial.trim().toUpperCase();
-    const esPublicoGeneral = nombre === "PUBLICO EN GENERAL" || nombre === "PÚBLICO EN GENERAL";
-    if (esPublicoGeneral && !input.facturaGlobal) {
-      errs.push(
-        `El receptor ${rfc} con Nombre "PÚBLICO EN GENERAL" requiere Información Global ` +
-          `(facturaGlobal). Para una factura normal usa otro Nombre (p. ej. "FACTURA GLOBAL").`,
-      );
-    }
+
     // Uso must be S01 and régimen 616 for the genérico either way.
     if (input.receptor.usoCFDI.toUpperCase() !== "S01") {
       errs.push(`Para ${rfc} el Uso CFDI debe ser S01 (Sin efectos fiscales).`);
@@ -159,6 +175,18 @@ export async function generateInvoice(
   input: GenerateInvoiceInput,
 ): Promise<GenerateInvoiceResult> {
   const { session } = ctx;
+
+  // Auto-correct the receptor name for the genérico RFC. The SAT form REQUIRES a
+  // non-empty Nombre, but the name "PÚBLICO EN GENERAL" triggers CFDI 4.0's Información
+  // Global requirement. "FACTURA GLOBAL" satisfies both: non-empty and no facturaGlobal.
+  const rfc = input.receptor.rfc.toUpperCase().trim();
+  const esGenerico = rfc === RFC_GENERICO_NACIONAL || rfc === RFC_GENERICO_EXTRANJERO;
+  if (esGenerico) {
+    const nombre = input.receptor.nombreRazonSocial.trim().toUpperCase();
+    if (!nombre || nombre === "PUBLICO EN GENERAL" || nombre === "PÚBLICO EN GENERAL") {
+      input.receptor.nombreRazonSocial = DEFAULT_RECEPTOR.nombre; // "FACTURA GLOBAL"
+    }
+  }
 
   // Safeguard: reject CFDI-invalid input up front (before login/captcha).
   validateInvoiceInput(input);
@@ -201,13 +229,20 @@ export async function generateInvoice(
   // typing "Sin efectos fiscales" finds nothing and the value stays G01, which the
   // SAT rejects. "Otro" exposes the full régimen-616 Uso catalog (where S01 exists).
   await localAutocompletePick(session, SEL.factura.clienteFrecuente, "Otro");
+
+  // For público en general, always use defaults (empty name is intentional — SAT auto-fills)
+  const receptorRfc = input.receptor.rfc;
+  const receptorNombre = esGenerico ? DEFAULT_RECEPTOR.nombre : input.receptor.nombreRazonSocial;
+  const receptorCp = esGenerico ? DEFAULT_RECEPTOR.codigoPostal : input.receptor.codigoPostal;
+  const receptorRegimen = esGenerico ? DEFAULT_RECEPTOR.regimen : input.receptor.regimenFiscalReceptor;
+
   // Fill only EDITABLE fields — for público en general the SAT auto-fills and DISABLES
   // some receptor inputs (e.g. CP = emisor's CP). Forcing a disabled field just hangs;
   // skip it (the SAT already holds the correct value) and let the final check confirm.
-  await fillIfEditable(session, SEL.factura.rfcReceptor, input.receptor.rfc, ctx, "RFC");
-  await fillIfEditable(session, SEL.factura.nombreReceptor, input.receptor.nombreRazonSocial, ctx, "Nombre");
-  await fillIfEditable(session, SEL.factura.codigoPostalReceptor, input.receptor.codigoPostal, ctx, "CP");
-  await autocompletePick(session, SEL.factura.regimenReceptor, input.receptor.regimenFiscalReceptor);
+  await fillIfEditable(session, SEL.factura.rfcReceptor, receptorRfc, ctx, "RFC");
+  await fillIfEditable(session, SEL.factura.nombreReceptor, receptorNombre, ctx, "Nombre");
+  await fillIfEditable(session, SEL.factura.codigoPostalReceptor, receptorCp, ctx, "CP");
+  await autocompletePick(session, SEL.factura.regimenReceptor, receptorRegimen);
 
   // Factura Global (InformacionGlobal) — required for público en general.
   if (input.facturaGlobal) {
@@ -218,14 +253,20 @@ export async function generateInvoice(
   // Uso de la Factura: the SAT auto-fills a default (e.g. G01) that violates the
   // régimen↔uso rule, so override it. Best-effort here so diagnostics still print;
   // the final required-fields check fails loud if it didn't take.
+  // For público en general, always use S01 (Sin efectos fiscales)
+  const usoCfdi = esGenerico ? "S01" : input.receptor.usoCFDI;
   try {
-    await setUsoCfdi(session, input.receptor.usoCFDI, ctx);
+    await setUsoCfdi(session, usoCfdi, ctx);
   } catch (e) {
     ctx.log.warn({ err: (e as Error).message }, "setUsoCfdi failed (continuing to diagnostics)");
   }
 
-  // Override the receptor name LAST (e.g. "PUBLICO EN GENERAL" → "FACTURA GLOBAL").
-  await session.fill(SEL.factura.nombreReceptor, input.receptor.nombreRazonSocial);
+  // Override the receptor name LAST — the SAT can clear it when other receptor fields
+  // re-render. Use fillIfEditable so a locked field doesn't stall (the final required-
+  // fields check will catch a genuinely empty name).
+  if (input.receptor.nombreRazonSocial?.trim()) {
+    await fillIfEditable(session, SEL.factura.nombreReceptor, input.receptor.nombreRazonSocial, ctx, "Nombre");
+  }
 
   await dumpReceptorState(session);
   // Verify the required receptor fields are populated; re-fill empties, fail if any
