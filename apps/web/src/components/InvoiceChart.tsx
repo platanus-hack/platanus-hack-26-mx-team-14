@@ -101,14 +101,15 @@ const SK = 'oklch(0.66 0.16 222)';
 export default function InvoiceChart() {
   const reduce = useReducedMotion();
   const [data, setData] = useState<MonthData[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Init from token so we don't setState synchronously in the effect when there's none.
+  const [loading, setLoading] = useState(() => Boolean(localStorage.getItem('sati_token')));
   const [active, setActive] = useState<number | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; i: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('sati_token');
-    if (!token) { setLoading(false); return; }
+    if (!token) return;
     api.get('/me/invoice-summary')
       .then(r => setData(r.data.months ?? []))
       .catch(() => {})

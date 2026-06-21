@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, type SyntheticEvent } from 'react';
 import { Send, LogOut, Mic, MicOff, ImagePlus, X, Settings } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import Orb from '../components/Orb';
-import InvoiceChart from '../components/InvoiceChart';
 import SuggestionChips from '../components/SuggestionChips';
 import CsfCard from '../components/CsfCard';
 import InvoiceListCard from '../components/InvoiceListCard';
@@ -317,17 +316,6 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
               className="absolute inset-0 overflow-y-auto flex flex-col items-center px-6 pt-10 pb-28 gap-6"
               aria-label="Estado inicial"
             >
-              {/* Historical chart — data from DB, loads async */}
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.1 }}
-                className="w-full max-w-2xl rounded-2xl border border-border bg-surface/60 backdrop-blur-sm px-5 pt-5 pb-4"
-              >
-                <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-4">Actividad fiscal — últimos 12 meses</p>
-                <InvoiceChart />
-              </motion.div>
-
               {/* Hint + suggestions */}
               <motion.div
                 animate={!reduce ? { scale: [1, 1.03, 1], opacity: [0.7, 1, 0.7] } : {}}
