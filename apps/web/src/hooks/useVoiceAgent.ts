@@ -350,14 +350,14 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
     const contextMessages = messagesRef.current.slice(-10).map(m => {
       if (m.image && m.role === 'user') {
         return {
-          role: m.role as const,
+          role: m.role as "user" | "assistant",
           content: [
             { type: 'image' as const, source: { type: 'base64' as const, media_type: m.image.mediaType, data: m.image.base64 } },
             { type: 'text' as const, text: m.content },
           ],
         };
       }
-      return { role: m.role as const, content: m.content };
+      return { role: m.role as "user" | "assistant", content: m.content };
     });
 
     const imageMsgCount = contextMessages.filter(m => Array.isArray(m.content) && m.content.some(b => b.type === 'image')).length;
