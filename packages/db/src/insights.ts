@@ -1,6 +1,6 @@
-import { sql } from "drizzle-orm";
+import { sql, and, eq, isNull, desc } from "drizzle-orm";
 import { db } from "./client.js";
-import { queryLog } from "./schema.js";
+import { queryLog, documents } from "./schema.js";
 
 /**
  * KG-lite: a counterparty is an RFC the user transacts with. We derive the graph
@@ -67,6 +67,80 @@ export async function topCounterparties(opts: {
     invoiceCount: Number(r.invoice_count),
     total: Number(r.total),
   }));
+}
+
+/**
+ * The user's fiscal profile (régimen, domicilio, obligaciones) derived from their
+ * most recent stored CSF — part of the KG-lite "easy access" surface so the agent
+ * and UI never need to re-download the Constancia. Returns null if no CSF in memory.
+ */
+export type Regimen = { nombre: string; porcentaje?: number };
+export type FiscalProfile = {
+  rfc: string;
+  nombre: string | null;
+  regimenFiscal: Regimen[];
+  codigoPostal: string | null;
+  obligaciones: { descripcion: string; vencimiento?: string }[];
+  updatedAt: string;
+};
+
+/** régimenFiscal is `string[]` in seeds, `{nombre,porcentaje}[]` from the scraper. */
+function normRegimen(raw: unknown): Regimen[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((r): Regimen | null => {
+      if (typeof r === "string") return r.trim() ? { nombre: r.trim() } : null;
+      if (r && typeof r === "object") {
+        const o = r as { nombre?: unknown; porcentaje?: unknown };
+        const nombre = typeof o.nombre === "string" ? o.nombre.trim() : "";
+        if (!nombre) return null;
+        return typeof o.porcentaje === "number" ? { nombre, porcentaje: o.porcentaje } : { nombre };
+      }
+      return null;
+    })
+    .filter((r): r is Regimen => r !== null);
+}
+
+export async function fiscalProfile(userId: string, rfc?: string): Promise<FiscalProfile | null> {
+  const where = [eq(documents.userId, userId), eq(documents.type, "csf"), isNull(documents.deletedAt)];
+  if (rfc) where.push(eq(documents.rfc, rfc));
+  const rows = await db()
+    .select({ rfc: documents.rfc, metadata: documents.metadata, updatedAt: documents.updatedAt })
+    .from(documents)
+    .where(and(...where))
+    .orderBy(desc(documents.updatedAt))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+
+  const m = row.metadata as {
+    nombre?: unknown;
+    regimenFiscal?: unknown;
+    domicilioFiscal?: { codigoPostal?: unknown };
+    obligaciones?: unknown;
+  };
+  const obligaciones = Array.isArray(m.obligaciones)
+    ? m.obligaciones
+        .map((o) => {
+          const oo = o as { descripcion?: unknown; vencimiento?: unknown };
+          const descripcion = typeof oo.descripcion === "string" ? oo.descripcion : "";
+          if (!descripcion) return null;
+          return typeof oo.vencimiento === "string"
+            ? { descripcion, vencimiento: oo.vencimiento }
+            : { descripcion };
+        })
+        .filter((o): o is { descripcion: string; vencimiento?: string } => o !== null)
+    : [];
+
+  return {
+    rfc: row.rfc,
+    nombre: typeof m.nombre === "string" ? m.nombre : null,
+    regimenFiscal: normRegimen(m.regimenFiscal),
+    codigoPostal:
+      typeof m.domicilioFiscal?.codigoPostal === "string" ? m.domicilioFiscal.codigoPostal : null,
+    obligaciones,
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
 
 /** Record an NL query (fire-and-forget; never blocks a turn). */

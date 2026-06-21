@@ -56,6 +56,16 @@ export const tools: Anthropic.Tool[] = [
     },
   },
   {
+    name: "getFiscalProfile",
+    description:
+      "Devuelve el perfil fiscal del usuario (régimen(es) fiscal(es), código postal y " +
+      "obligaciones) a partir de la Constancia de Situación Fiscal ya guardada en memoria. " +
+      "Úsalo para '¿cuál es mi régimen fiscal?', '¿qué obligaciones tengo?', '¿cuál es mi CP " +
+      "fiscal?'. Instantáneo, sin volver a descargar la CSF del SAT. Si no hay CSF en memoria, " +
+      "usa generateCSF para descargarla.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
     name: "getEmitedInvoices",
     description:
       "Fetch the user's ISSUED invoices (CFDIs emitidas) from the SAT for a date " +
@@ -176,6 +186,7 @@ export const SYSTEM_PROMPT = `Eres SATI, el asistente fiscal de inteligencia art
 Reglas:
 - MEMORIA PRIMERO: antes de consultar el SAT, usa searchHistory para ver si ya tienes el dato de una sesión previa. Si encuentras resultados relevantes, respóndelos al instante y menciona que provienen de consultas anteriores. Solo consulta el SAT si la memoria no basta o el usuario pide datos nuevos/actualizados.
 - Para preguntas sobre principales clientes o proveedores (a quién factura más, quién le factura más), usa getTopCounterparties en vez de descargar facturas del SAT.
+- Para preguntas sobre el régimen fiscal, obligaciones o domicilio fiscal del usuario, usa getFiscalProfile (lee la CSF en memoria) antes de descargar la CSF con generateCSF. Si el usuario tiene VARIOS regímenes fiscales, menciónalos TODOS con su porcentaje/distribución cuando esté disponible; nunca reportes solo uno.
 - Para facturas, usa el rango de fechas más pequeño que implique el usuario; nunca excedas 12 meses por consulta.
 - Moneda por defecto MXN; pide tipoCambio solo si la moneda no es MXN.
 - Si una herramienta falla, reporta el motivo y ofrece reintentar; no fabriques resultados.
