@@ -165,13 +165,11 @@ export async function resolveFastPath(
   }
 
   if (intent === "csf") {
-    let csf = await csfFromDb(userId, rfc);
-    let source: FastPathResult["source"] = "db";
-    if (!csf) {
-      if (!FIXTURES_ENABLED) return null;
-      csf = csfFromFixture();
-      source = "fixture";
-    }
+    // Demo: prefer the curated CSF. The seeded/stored CSF is random (wrong régimen
+    // split, etc.) and looks off on screen. With DEMO_FIXTURES off, use the real DB CSF.
+    const csf = FIXTURES_ENABLED ? csfFromFixture() : await csfFromDb(userId, rfc);
+    const source: FastPathResult["source"] = FIXTURES_ENABLED ? "fixture" : "db";
+    if (!csf) return null;
     const cp = csf.domicilioFiscal?.codigoPostal;
     const reply =
       `Tu régimen fiscal: ${regimenLabel(csf)}.` +
