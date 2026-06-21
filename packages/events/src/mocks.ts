@@ -227,6 +227,30 @@ function invoicePreview(input: Record<string, unknown>): SkillResult {
   };
 }
 
+/**
+ * Filter invoices by the same input the agent/tool passes: date range
+ * (from/to, YYYY-MM-DD), estado, and counterparty RFC. ISO date strings compare
+ * lexicographically, so string comparison is correct. This is what makes
+ * "facturas del mes pasado" actually return only that month.
+ */
+function filterInvoices(invoices: Invoice[], input: Record<string, unknown>): Invoice[] {
+  const from = typeof input.from === "string" ? input.from : undefined;
+  const to = typeof input.to === "string" ? input.to : undefined;
+  const estado = typeof input.estado === "string" ? input.estado : undefined;
+  const rfcEmisor = typeof input.rfcEmisor === "string" ? input.rfcEmisor : undefined;
+  const rfcReceptor = typeof input.rfcReceptor === "string" ? input.rfcReceptor : undefined;
+
+  return invoices.filter((i) => {
+    const day = i.fechaEmision.slice(0, 10); // normalize ISO timestamps to YYYY-MM-DD
+    if (from && day < from) return false;
+    if (to && day > to) return false;
+    if (estado && i.estado !== estado) return false;
+    if (rfcEmisor && i.rfcEmisor !== rfcEmisor) return false;
+    if (rfcReceptor && i.rfcReceptor !== rfcReceptor) return false;
+    return true;
+  });
+}
+
 /** Run a skill against the demo dataset. generateInvoice always previews. */
 export function mockSkillResult(
   skill: SkillName,
@@ -234,9 +258,9 @@ export function mockSkillResult(
 ): SkillResult {
   switch (skill) {
     case "getEmitedInvoices":
-      return { skill: "getEmitedInvoices", invoices: emitidasFixture };
+      return { skill: "getEmitedInvoices", invoices: filterInvoices(emitidasFixture, input) };
     case "getReceiptInvoices":
-      return { skill: "getReceiptInvoices", invoices: recibidasFixture };
+      return { skill: "getReceiptInvoices", invoices: filterInvoices(recibidasFixture, input) };
     case "generateCSF":
       return csfFixture;
     case "generateInvoice":
