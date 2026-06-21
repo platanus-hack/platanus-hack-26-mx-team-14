@@ -25,13 +25,6 @@ const TOOL_LABELS: Record<string, string> = {
   extractTicketData: "Extrayendo datos del ticket…",
 };
 
-const AUTH_SYSTEM = `Eres SATI, un asistente fiscal virtual para el SAT de México.
-
-Para proteger los datos fiscales del usuario, necesitas verificar su identidad antes de continuar.
-
-Pide al usuario su código de identificación de 6 dígitos. El usuario puede verlo en la sección de Configuración de la plataforma SATI.
-
-TU RESPUESTA SE CONVIERTE A VOZ: máximo 2 oraciones cortas, sin markdown ni caracteres especiales.`;
 
 function extractCode(text: string): string | null {
   const match = text.replace(/[\s\-]/g, "").match(/(\d{6})/);
@@ -121,20 +114,8 @@ export async function publicLlmAuthRoutes(app: FastifyInstance) {
         return sendReply(`Autenticado. Hola ${user.displayName ?? ""}. ¿En qué te puedo ayudar hoy?`);
       }
 
-      // Sin código todavía: pedir autenticación
-      const authHistory: Anthropic.MessageParam[] = messages
-        .filter((m) => m.role === "user" || m.role === "assistant")
-        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
-
-      const res = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 150,
-        system: AUTH_SYSTEM,
-        messages: authHistory.length > 0 ? authHistory : [{ role: "user", content: "hola" }],
-      });
-      const block = res.content.find((c) => c.type === "text");
-      const text = block && "text" in block ? block.text : "Por favor dime tu código de identificación de 6 dígitos.";
-      return sendReply(text);
+      // Sin código todavía: pedir el código con mensaje fijo (evita que Claude invente contexto del SAT)
+      return sendReply("Hola, soy SATI. Por favor dime tu código de identificación de 6 dígitos.");
     }
 
     // ── 2. Loop de agente — copia exacta de /agent/voice-turn ────────────────
