@@ -20,6 +20,7 @@ import {
   logUserQuery,
   lastUserText,
 } from "../ragMemory.js";
+import { resolveFastPath } from "../fastPath.js";
 
 export async function agentRoutes(app: FastifyInstance) {
   // Client tuned for outages: SDK retries 429/500/529 with backoff (maxRetries: 5).
@@ -37,8 +38,22 @@ export async function agentRoutes(app: FastifyInstance) {
     turnLog.info({ inboundMessages: messages.length }, "agent turn started");
 
     // Log the user's NL query (last user turn) for the top-queries suggestions.
-    logUserQuery({ userId: userId ?? "", rfc: rfc ?? "" }, lastUserText(messages), turnLog);
+    const userText = lastUserText(messages);
+    logUserQuery({ userId: userId ?? "", rfc: rfc ?? "" }, userText, turnLog);
     try {
+      // Fast path: answer common questions straight from the DB and skip the loop.
+      // Skipped when an image is attached (those need the agent's vision flow).
+      const hasImage = messages.some(
+        (m) => Array.isArray(m.content) && m.content.some((b) => b.type === "image"),
+      );
+      const fast = hasImage
+        ? null
+        : await resolveFastPath({ userId: userId ?? "", rfc: rfc ?? "" }, userText, turnLog);
+      if (fast) {
+        messages.push({ role: "assistant", content: fast.reply });
+        return reply.send({ reply: fast.reply, messages, skillResult: fast.skillResult });
+      }
+
       for (let i = 0; i < 6; i++) {
         // Resilient call: retries (SDK) → fallback to Sonnet on overload (helper).
         const t0 = Date.now();

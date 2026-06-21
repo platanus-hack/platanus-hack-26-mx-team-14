@@ -13,6 +13,7 @@ import {
 import { type ScrapeJob, type SkillName, type SkillResult } from "@sat/events";
 import { runSkillViaQueue } from "../queue.js";
 import { extractTicket } from "@sat/scraper";
+import { resolveFastPath } from "../fastPath.js";
 import {
   persistToolResult,
   runSearchHistory,
@@ -164,7 +165,22 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
       let lastSkillResult: SkillResult | null = null;
       let finalReply = "";
 
-      for (let i = 0; i < 6; i++) {
+      // Fast path: answer common questions straight from the DB (RAG memory) and
+      // skip the agent loop entirely. Skipped when an image is attached (ticket→
+      // factura needs the agent); falls through (null) for nuanced asks.
+      const fast =
+        imageCount === 0
+          ? await resolveFastPath({ userId: userId ?? "", rfc: rfc ?? "" }, userText, req.log)
+          : null;
+      if (fast) {
+        finalReply = fast.reply;
+        lastSkillResult = fast.skillResult;
+        if (fast.skillResult) {
+          send({ type: "tool_result", skill: fast.skillResult.skill, result: fast.skillResult });
+        }
+      }
+
+      for (let i = 0; !fast && i < 6; i++) {
         const res = await createMessageResilient(
           anthropic,
           {

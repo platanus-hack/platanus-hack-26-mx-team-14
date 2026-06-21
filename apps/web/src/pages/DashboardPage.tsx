@@ -9,6 +9,7 @@ import InvoicePreviewCard from '../components/InvoicePreviewCard';
 import Markdown from '../components/Markdown';
 import owlLogo from '../assets/owl-logo.png';
 import { useVoiceAgent } from '../hooks/useVoiceAgent';
+import { useWaitingStatus } from '../hooks/useWaitingStatus';
 import { getUser } from '../lib/auth';
 import type { Page, SkillResult } from '../types';
 
@@ -61,6 +62,15 @@ type LayoutState = 'empty' | 'active' | 'split';
 export default function DashboardPage({ onNavigate, onLogout }: DashboardPageProps) {
   const reduce = useReducedMotion();
   const currentUser = getUser();
+  // Track narrow viewports so the split view can stack vertically on mobile.
+  const [isNarrow, setIsNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const update = () => setIsNarrow(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
   // `baseLayout` drives the pre-content phase (empty ↔ active); once the agent
   // produces content the layout latches to 'split'. Deriving 'split' instead of
   // setting it in an effect avoids react-hooks/set-state-in-effect.
@@ -76,6 +86,9 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
 
   const glow = orbGlow[status] ?? orbGlow.idle;
   const orbState = orbStateMap[status] ?? 'idle';
+  // Brand-aware waiting copy that fills the gaps; a concrete tool label wins when present.
+  const waitingMessage = useWaitingStatus(status === 'processing');
+  const liveStatus = toolActivity ?? waitingMessage;
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-scroll to bottom when messages or streamText change
@@ -162,7 +175,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
     else agent.endSession();
   }
 
-  const orbSize = layout === 'split' ? 120 : 260;
+  const orbSize = layout === 'split' ? (isNarrow ? 56 : 120) : (isNarrow ? 180 : 260);
 
   return (
     <div className="h-screen bg-bg flex flex-col overflow-hidden relative">
@@ -212,7 +225,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.88, y: 4 }}
                 transition={{ duration: 0.2 }}
-                className={`h-7 px-3 rounded-full border text-xs font-medium flex items-center gap-2 ${
+                className={`h-7 px-3 rounded-full border text-xs font-medium flex items-center gap-2 min-w-0 max-w-[45vw] sm:max-w-none ${
                   status === 'speech' || status === 'ready'
                     ? 'border-emerald/40 text-emerald bg-emerald-lo'
                     : status === 'processing'
@@ -234,7 +247,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                     aria-hidden="true"
                   />
                 )}
-                {toolActivity ?? statusLabels[status]}
+                <span className="truncate">{toolActivity ?? statusLabels[status]}</span>
               </motion.div>
             </AnimatePresence>
 
@@ -314,13 +327,15 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.3 }}
-              className={`h-full flex ${layout === 'split' ? 'flex-row' : 'flex-col items-center justify-center'}`}
+              className={`h-full flex ${layout === 'split' ? 'flex-col sm:flex-row' : 'flex-col items-center justify-center'}`}
             >
-              {/* Orb panel */}
+              {/* Orb panel — compact horizontal bar on mobile, left column on desktop */}
               <motion.div
                 layout={!reduce}
-                className={`flex flex-col items-center justify-center shrink-0 ${
-                  layout === 'split' ? 'w-48 border-r border-border py-8 gap-3' : 'gap-5'
+                className={`flex items-center justify-center shrink-0 ${
+                  layout === 'split'
+                    ? 'w-full sm:w-48 flex-row sm:flex-col border-b sm:border-b-0 sm:border-r border-border px-4 sm:px-0 py-3 sm:py-8 gap-3'
+                    : 'flex-col gap-5'
                 }`}
                 transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
               >
@@ -357,14 +372,18 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                 {/* State label */}
                 <AnimatePresence mode="wait">
                   <motion.p
-                    key={status}
+                    key={status === 'processing' && liveStatus ? liveStatus : status}
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.2 }}
                     className={`text-xs text-muted text-center ${layout === 'split' ? '' : 'text-sm'}`}
                   >
-                    {sessionActive ? statusLabels[status] : 'Toca para hablar'}
+                    {!sessionActive
+                      ? 'Toca para hablar'
+                      : status === 'processing' && liveStatus
+                        ? liveStatus
+                        : statusLabels[status]}
                   </motion.p>
                 </AnimatePresence>
 
@@ -375,7 +394,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                       initial={{ opacity: 0, y: -2 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
-                      className="flex items-center gap-1 text-[10px] text-subtle/50"
+                      className="hidden sm:flex items-center gap-1 text-[10px] text-subtle/50"
                     >
                       <MicOff size={9} />
                       toca para terminar
@@ -394,27 +413,8 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
-                    className="flex-1 overflow-y-auto px-6 py-6 pb-28 flex flex-col gap-5"
+                    className="flex-1 min-w-0 overflow-y-auto px-4 sm:px-6 py-6 pb-28 flex flex-col gap-5"
                   >
-                    {/* Tool activity indicator */}
-                    <AnimatePresence>
-                      {toolActivity && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0 }}
-                          className="flex items-center gap-2 text-xs text-purple-300"
-                        >
-                          <motion.span
-                            className="w-1.5 h-1.5 rounded-full bg-purple-400"
-                            animate={{ opacity: [1, 0.3, 1] }}
-                            transition={{ duration: 0.8, repeat: Infinity }}
-                          />
-                          {toolActivity}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
                     {/* Full conversation history */}
                     {messages.map((msg, i) => (
                       <motion.div
@@ -493,6 +493,29 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                           transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
                         >
                           <SkillCard result={skillResult} />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Live status tail: "working…" sits at the very bottom, below any
+                        rendered widget/card. Concrete tool label wins; else brand copy. */}
+                    <AnimatePresence mode="wait">
+                      {liveStatus && (status === 'processing' || toolActivity) && !streamText && (
+                        <motion.div
+                          key={liveStatus}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 4 }}
+                          transition={{ duration: 0.25 }}
+                          className={`flex items-center gap-2 text-xs ${toolActivity ? 'text-purple-300' : 'text-muted'}`}
+                          aria-live="polite"
+                        >
+                          <motion.span
+                            className={`w-1.5 h-1.5 rounded-full ${toolActivity ? 'bg-purple-400' : 'bg-emerald'}`}
+                            animate={{ opacity: [1, 0.3, 1] }}
+                            transition={{ duration: 0.8, repeat: Infinity }}
+                          />
+                          {liveStatus}
                         </motion.div>
                       )}
                     </AnimatePresence>
