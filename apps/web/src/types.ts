@@ -67,10 +67,23 @@ export type SkillName =
   | 'generateCSF'
   | 'generateInvoice';
 
+export interface TicketExtraction {
+  tipoDocumento: 'ticket' | 'factura' | 'nota_venta' | 'recibo' | 'otro';
+  emisor?: { nombre?: string; rfc?: string };
+  fecha?: string;
+  conceptos: { descripcion: string; cantidad: number; valorUnitario: number; descuento: number }[];
+  subtotal?: number;
+  iva?: number;
+  total: number;
+  moneda: string;
+  observaciones?: string;
+}
+
 /** Discriminated union of what a skill run returns (mirror @sat/events). */
 export type SkillResult =
   | { skill: 'getEmitedInvoices'; invoices: Invoice[] }
   | { skill: 'getReceiptInvoices'; invoices: Invoice[] }
   | { skill: 'generateCSF'; csf: CSF }
   | { skill: 'generateInvoice'; status: 'previewed'; preview: InvoicePreview }
-  | { skill: 'generateInvoice'; status: 'issued'; issued: IssuedInvoice };
+  | { skill: 'generateInvoice'; status: 'issued'; issued: IssuedInvoice }
+  | { skill: 'extractTicket'; extraction: TicketExtraction };

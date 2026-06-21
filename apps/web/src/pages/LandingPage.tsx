@@ -6,6 +6,7 @@ import {
   Lock, ArrowRight, ChevronRight, Zap, Phone
 } from 'lucide-react';
 import HeroOrb from '../components/HeroOrb';
+import { isAuthenticated } from '../lib/auth';
 import type { Page } from '../types';
 
 interface LandingPageProps {
@@ -71,6 +72,7 @@ const accentMap = {
 };
 
 export default function LandingPage({ onNavigate }: LandingPageProps) {
+  const loggedIn = isAuthenticated();
   const prefersReducedMotion = useReducedMotion();
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollY } = useScroll();
@@ -145,13 +147,13 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
 
           <motion.button
             type="button"
-            onClick={() => onNavigate('auth')}
+            onClick={() => onNavigate(loggedIn ? 'dashboard' : 'auth')}
             className="h-8 px-4 rounded-full bg-surface border border-border text-sm font-medium text-ink"
             whileHover={{ borderColor: 'oklch(0.72 0.17 162)', color: 'oklch(0.72 0.17 162)' }}
             whileTap={{ scale: 0.97 }}
             transition={{ duration: 0.15 }}
           >
-            Iniciar sesión
+            {loggedIn ? 'Chat aquí' : 'Iniciar sesión'}
           </motion.button>
         </nav>
       </header>

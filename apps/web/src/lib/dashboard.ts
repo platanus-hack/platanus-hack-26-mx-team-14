@@ -76,5 +76,10 @@ export function resultToPanels(result: SkillResult, query?: string): Panel[] {
               : { value: result.issued.uuid, sub: 'Folio fiscal', tone: 'emerald' },
         },
       ];
+
+    default:
+      // extractTicket (and any future skill) is rendered by main's web, not the
+      // accumulating-panels model — no panel here.
+      return [];
   }
 }

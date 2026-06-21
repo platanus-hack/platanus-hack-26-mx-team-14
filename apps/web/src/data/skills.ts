@@ -51,20 +51,28 @@ function mergeInvoices(real: Invoice[], mock: Invoice[]): Invoice[] {
 }
 
 function augmentWithMock(real: SkillResult): SkillResult {
-  const mock = mockFor(real.skill);
-  if (real.skill === 'getEmitedInvoices' && mock.skill === 'getEmitedInvoices') {
-    return { skill: 'getEmitedInvoices', invoices: mergeInvoices(real.invoices, mock.invoices) };
+  if (real.skill === 'getEmitedInvoices') {
+    const mock = mockFor('getEmitedInvoices');
+    if (mock.skill === 'getEmitedInvoices') {
+      return { skill: 'getEmitedInvoices', invoices: mergeInvoices(real.invoices, mock.invoices) };
+    }
   }
-  if (real.skill === 'getReceiptInvoices' && mock.skill === 'getReceiptInvoices') {
-    return { skill: 'getReceiptInvoices', invoices: mergeInvoices(real.invoices, mock.invoices) };
+  if (real.skill === 'getReceiptInvoices') {
+    const mock = mockFor('getReceiptInvoices');
+    if (mock.skill === 'getReceiptInvoices') {
+      return { skill: 'getReceiptInvoices', invoices: mergeInvoices(real.invoices, mock.invoices) };
+    }
   }
-  if (real.skill === 'generateCSF' && mock.skill === 'generateCSF') {
+  if (real.skill === 'generateCSF') {
+    const mock = mockFor('generateCSF');
     // Keep the real CSF, but fill the régimen % (a SATI estimate the SAT omits).
     const hasPct = real.csf.regimenFiscal.some((r) => r.porcentaje != null);
-    return {
-      skill: 'generateCSF',
-      csf: hasPct ? real.csf : { ...real.csf, regimenFiscal: mock.csf.regimenFiscal },
-    };
+    if (mock.skill === 'generateCSF') {
+      return {
+        skill: 'generateCSF',
+        csf: hasPct ? real.csf : { ...real.csf, regimenFiscal: mock.csf.regimenFiscal },
+      };
+    }
   }
   return real;
 }
@@ -144,5 +152,7 @@ export function replyFor(result: SkillResult): string {
       return result.status === 'previewed'
         ? `Tu vista previa está lista: total ${mxn(result.preview.total)}. ¿La emito?`
         : `Factura emitida con folio ${result.issued.uuid}.`;
+    default:
+      return 'Listo.';
   }
 }

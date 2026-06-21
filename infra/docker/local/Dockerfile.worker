@@ -1,7 +1,7 @@
 # Dev image for @sat/worker. Uses the Playwright base image so Chromium + all
 # system deps are present (the worker drives the SAT via Playwright when
 # SAT_DRIVER=playwright). Source is bind-mounted; deps in anonymous volumes.
-FROM mcr.microsoft.com/playwright:v1.49.0-noble
+FROM mcr.microsoft.com/playwright:v1.61.0-noble
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
@@ -10,9 +10,21 @@ RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 
 WORKDIR /app
 
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+# sharp prebuilt binaries need these libs on Noble
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 libexpat1 && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json .npmrc ./
 COPY packages ./packages
 COPY apps/worker ./apps/worker
 RUN pnpm install --frozen-lockfile || pnpm install
+# Ensure sharp native bindings are built for this platform
+RUN pnpm --filter @sat/scraper rebuild sharp 2>/dev/null || true
 
-CMD ["pnpm", "--filter", "@sat/worker", "dev"]
+# Run a virtual X display (Xvfb) so Chromium can run NON-headless (SAT_HEADFUL=1) —
+# a headless browser gets logged out on the CSF download click; headful matches local.
+# We start Xvfb ourselves and `exec` the worker instead of using `xvfb-run`, which
+# hangs as PID 1 in Docker (starts Xvfb but never execs the command).
+ENV DISPLAY=:99
+CMD Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & exec pnpm --filter @sat/worker dev

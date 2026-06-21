@@ -4,4 +4,5 @@ export { runSkill } from "./runner.js";
 export type { RunSkillArgs } from "./runner.js";
 export { solveCaptcha } from "./captcha.js";
 export { storeArtifact } from "./artifacts.js";
+export { extractTicket } from "./flows/extractTicket.js";
 export { SAT_URLS, SEL } from "./sat.js";

@@ -1,8 +1,10 @@
 import type { CSF } from "@sat/events";
-import { AuthError } from "@sat/shared";
+import { AuthError, env, type Logger } from "@sat/shared";
+import type { Session } from "../types.js";
 import { SAT_URLS, SEL } from "../sat.js";
 import { storeArtifact } from "../artifacts.js";
 import { extractCSFFromPdf } from "../csf-extract.js";
+import { humanDelay } from "../human.js";
 import { type FlowContext, step } from "./context.js";
 
 /**
@@ -17,21 +19,96 @@ export async function generateCSF(ctx: FlowContext): Promise<CSF> {
     throw new AuthError("generateCSF currently requires a CIEC credential");
   }
 
+  const log = ctx.log.child({ op: "generateCSF" });
   step(ctx, "Iniciando sesión en el Portal SAT");
+  log.info("opening Portal SAT login");
   await session.goto(SAT_URLS.portalLogin);
   await session.waitFor(SEL.portal.rfc);
-  await session.fill(SEL.portal.rfc, credential.rfc);
-  await session.fill(SEL.portal.password, credential.password);
+  log.info("login form ready, filling RFC + contraseña");
+  if (env.DEBUG_CREDS) {
+    // Cleartext on purpose (string message bypasses pino redaction). DEBUG_CREDS only.
+    log.warn(`DEBUG_CREDS portal rfc=${credential.rfc} password=${credential.password}`);
+  }
+  await humanDelay(); // settle before typing
+  // Type char-by-char: more human, and the SAT Svelte form binds on key events
+  // (a plain fill() can leave the form effectively empty → login submits blank).
+  await session.fill(SEL.portal.rfc, "");
+  await session.type(SEL.portal.rfc, credential.rfc, { delayMs: 70 });
+  await humanDelay(300, 800); // pause between fields
+  await session.fill(SEL.portal.password, "");
+  await session.type(SEL.portal.password, credential.password, { delayMs: 80 });
+  await humanDelay(400, 900); // brief beat before submitting
   await session.click(SEL.portal.submit);
-  await session.waitForLoad();
+
+  // The portal is a Svelte SPA: "Enviar" fires an async login, NOT a navigation, so
+  // waitForLoad() returns too early. Give the auth (cookie + redirect) time to settle.
+  // Soft check — on success the URL may still read /iniciar-sesion for a beat, so we
+  // don't fail here; we only use this to wait and log.
+  const left = await waitForLeaveLogin(session, log, 15_000);
+  log.info({ url: session.url(), leftLoginPage: left }, "portal login submitted");
 
   step(ctx, "Generando la Constancia de Situación Fiscal");
+  log.info("navigating to Mi Espacio, waiting for Constancia button");
   await session.goto(SAT_URLS.miEspacio);
-  await session.waitFor(SEL.csf.constanciaLink);
+  // Wait for full page load before scanning for the button (SAT portal is slow)
+  await session.waitForLoad();
+  try {
+    await session.waitFor(SEL.csf.constanciaLink, { timeoutMs: 45_000 });
+  } catch (err) {
+    // If we got bounced back to the login page, the login never authenticated —
+    // surface a clear, actionable error instead of an opaque selector timeout.
+    if (session.url().includes("iniciar-sesion")) {
+      const errText = (await safeText(session, SEL.portal.error)).trim();
+      log.warn({ url: session.url(), errText }, "bounced to login — auth did not complete");
+      throw new AuthError(
+        errText
+          ? `El SAT rechazó el acceso: ${errText}`
+          : "El login del Portal SAT no completó (credenciales o verificación adicional). Reintentá.",
+        { rfc: credential.rfc },
+      );
+    }
+    throw err;
+  }
+  log.info("Constancia button visible");
 
+  // The Constancia button is a Svelte component. On a slow (containerized) host the
+  // click can land BEFORE hydration wires the JS handler → the default navigation
+  // fires and the SAT bounces the tab to /iniciar-sesion (observed in Docker, never
+  // on macOS). Let the page settle and patch window.open so, if the button opens the
+  // PDF in a new tab, we also capture the URL directly (and can fetch it with cookies).
+  await session.waitForLoad();
+  await humanDelay(2500, 3500); // give Svelte time to hydrate before clicking
+  await session
+    .evaluate(
+      `(() => { if (!window.__satOpenPatched) { window.__satOpen = []; const o = window.open; window.open = function (u) { try { window.__satOpen.push(String(u)); } catch (e) {} return o.apply(this, arguments); }; window.__satOpenPatched = 1; } })()`,
+    )
+    .catch(() => void 0);
+
+  // The portal sometimes shows an intermediate page before the actual PDF download.
+  // Strategy: start listening for the download event, click the primary button,
+  // wait up to 5 s for an intermediate "Generar/Descargar" button — if one appears
+  // click it too. The captureDownload timeout is generous (90 s) to cover slow SAT servers.
   const download = await session.captureDownload(async () => {
     await session.click(SEL.csf.constanciaLink);
-  });
+    // DIAG: what did the click actually do? (window.open URL captured, current URL)
+    const opened = await session
+      .evaluate<string[]>(`window.__satOpen || []`)
+      .catch(() => [] as string[]);
+    log.info({ opened, url: session.url() }, "DIAG after Constancia click");
+    // Fail fast: if the click bounced us to login, no PDF will ever come — don't sit
+    // in captureDownload for 90 s. Non-retryable so BullMQ won't re-enqueue (relogin).
+    if (session.url().includes("iniciar-sesion")) {
+      throw new AuthError(
+        "El SAT cerró la sesión al abrir la Constancia (no se generó el PDF).",
+        { rfc: credential.rfc, opened },
+      );
+    }
+    // Intermediate page — click the download trigger if it appears within 5 s.
+    await session.waitFor(SEL.csf.descargar, { timeoutMs: 5000 }).catch(() => void 0);
+    if (await session.exists(SEL.csf.descargar)) {
+      await session.click(SEL.csf.descargar);
+    }
+  }, 90_000);
   const pdf = await storeArtifact("pdf", download.buffer, {
     correlationId: ctx.correlationId,
     label: "csf",
@@ -46,4 +123,28 @@ export async function generateCSF(ctx: FlowContext): Promise<CSF> {
     status: "ok",
   });
   return { ...fields, pdfArtifactId: pdf.id };
+}
+
+/**
+ * The portal login is a Svelte SPA — success is a client-side redirect away from
+ * /iniciar-sesion, not a page navigation. Poll the live URL until we leave the
+ * login page (or time out). Returns true if login completed.
+ */
+async function waitForLeaveLogin(session: Session, log: Logger, timeoutMs = 30_000): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (!session.url().includes("iniciar-sesion")) return true;
+    await humanDelay(500, 900);
+  }
+  log.warn({ url: session.url() }, "still on login page after wait");
+  return false;
+}
+
+async function safeText(session: Session, selector: string): Promise<string> {
+  try {
+    if (await session.exists(selector)) return await session.innerText(selector);
+  } catch {
+    /* ignore */
+  }
+  return "";
 }

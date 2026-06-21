@@ -25,9 +25,12 @@ export async function agentRoutes(app: FastifyInstance) {
     };
 
     const messages = [...(b.messages ?? [])];
+    const turnLog = req.log.child({ userId, rfc, op: "agent.turn" });
+    turnLog.info({ inboundMessages: messages.length }, "agent turn started");
     try {
       for (let i = 0; i < 6; i++) {
         // Resilient call: retries (SDK) → fallback to Sonnet on overload (helper).
+        const t0 = Date.now();
         const res = await createMessageResilient(
           anthropic,
           {
@@ -40,10 +43,22 @@ export async function agentRoutes(app: FastifyInstance) {
           },
           req.log,
         );
+        turnLog.info(
+          {
+            iter: i,
+            model: res.model,
+            stopReason: res.stop_reason,
+            inputTokens: res.usage?.input_tokens,
+            outputTokens: res.usage?.output_tokens,
+            ms: Date.now() - t0,
+          },
+          "model response",
+        );
         messages.push({ role: "assistant", content: res.content });
 
         if (res.stop_reason !== "tool_use") {
           const text = res.content.find((c) => c.type === "text");
+          turnLog.info({ iter: i }, "agent turn complete (no tool use)");
           return reply.send({ reply: text && "text" in text ? text.text : "", messages });
         }
 
@@ -51,6 +66,9 @@ export async function agentRoutes(app: FastifyInstance) {
         for (const block of res.content) {
           if (block.type !== "tool_use") continue;
           const correlationId = uuid();
+          // Log the tool call (input keys only — never the values, which may carry PII).
+          const toolLog = turnLog.child({ tool: block.name, correlationId, op: "agent.tool" });
+          toolLog.info({ inputKeys: Object.keys((block.input as object) ?? {}) }, "tool call started");
           const job: ScrapeJob = {
             skill: block.name as SkillName,
             correlationId,
@@ -60,14 +78,20 @@ export async function agentRoutes(app: FastifyInstance) {
             rfc: rfc ?? "",
             input: block.input as Record<string, unknown>,
           };
+          const tTool = Date.now();
           try {
             const result = await runSkillViaQueue(job);
+            toolLog.info({ ms: Date.now() - tTool, ok: true }, "tool call finished");
             toolResults.push({
               type: "tool_result",
               tool_use_id: block.id,
               content: JSON.stringify(result),
             });
           } catch (err) {
+            toolLog.error(
+              { ms: Date.now() - tTool, err: (err as Error).message },
+              "tool call failed",
+            );
             toolResults.push({
               type: "tool_result",
               tool_use_id: block.id,
@@ -79,6 +103,7 @@ export async function agentRoutes(app: FastifyInstance) {
         messages.push({ role: "user", content: toolResults });
       }
 
+      turnLog.warn("agent turn hit max iterations");
       return reply.send({ reply: "Se alcanzó el límite de iteraciones.", messages });
     } catch (err) {
       // Both primary and fallback model are unavailable → degrade gracefully.

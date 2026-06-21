@@ -4,11 +4,38 @@ import type { Session } from "../types.js";
 import { login } from "../auth.js";
 import { SEL } from "../sat.js";
 import { storeArtifact } from "../artifacts.js";
+import { extractInvoiceFromPdf } from "../invoice-extract.js";
 import { type FlowContext, step } from "./context.js";
 
 /** RFC genérico nacional (público en general) and extranjero. */
 const RFC_GENERICO_NACIONAL = "XAXX010101000";
 const RFC_GENERICO_EXTRANJERO = "XEXX010101000";
+
+/**
+ * Dismiss any Bootstrap error modal that might be blocking pointer events.
+ * The SAT portal sometimes shows #modal-error with data-backdrop="static"
+ * which intercepts clicks on underlying buttons.
+ */
+async function dismissErrorModals(session: Session): Promise<void> {
+  const hasError = await session.exists(SEL.factura.errorModal).catch(() => false);
+  if (hasError) {
+    await session
+      .evaluate(
+        `(() => {
+          const modals = document.querySelectorAll('#modal-error.in, .modal.error.in');
+          modals.forEach(m => {
+            m.classList.remove('in');
+            m.style.display = 'none';
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) backdrop.remove();
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+          });
+        })()`,
+      )
+      .catch(() => {});
+  }
+}
 
 /**
  * c_UsoCFDI (CFDI 4.0). The "Uso de la Factura" control is a LOCAL autocomplete
@@ -193,15 +220,18 @@ export async function generateInvoice(
     if (c.objetoImpuesto) await session.selectOption(SEL.factura.objetoImpuesto, c.objetoImpuesto);
     if (c.numeroIdentificacion)
       await session.fill(SEL.factura.numeroIdentificacion, c.numeroIdentificacion);
+    await dismissErrorModals(session);
     await session.click(SEL.factura.guardarConcepto);
     await session.waitForHidden(SEL.factura.loadingModal);
   }
 
   step(ctx, "Guardando borrador");
+  await dismissErrorModals(session);
   await session.click(SEL.factura.guardar);
   await session.waitForHidden(SEL.factura.loadingModal);
 
   step(ctx, "Generando vista previa");
+  await dismissErrorModals(session);
   const download = await session.captureDownload(async () => {
     await session.click(SEL.factura.vistaPrevia);
   });
@@ -209,6 +239,11 @@ export async function generateInvoice(
     correlationId: ctx.correlationId,
     label: "vista-previa",
   });
+
+  // Hand the preview PDF to Claude for an at-a-glance analysis (parties, timbrado,
+  // insight) — same pattern as the CSF. Best-effort: never blocks the preview.
+  step(ctx, "Analizando la vista previa con Claude");
+  const analysis = (await extractInvoiceFromPdf(download.buffer, ctx.correlationId)) ?? undefined;
 
   const subtotal = round2(
     input.conceptos.reduce((s, c) => s + c.cantidad * c.valorUnitario - (c.descuento ?? 0), 0),
@@ -221,7 +256,11 @@ export async function generateInvoice(
     iva,
     total: round2(subtotal + iva),
     rawArtifactId: previewArtifact.id,
+    analysis,
   };
+  if (analysis?.insight) {
+    ctx.emit?.({ kind: "scraping", label: `Análisis: ${analysis.insight}`, status: "ok" });
+  }
 
   // ---- SAFETY GATE ----
   if (!input.confirmed) {

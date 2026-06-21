@@ -58,11 +58,43 @@ export const generateInvoiceInput = z.object({
   confirmed: z.boolean().default(false),
 });
 
+export const extractTicketInput = z.object({
+  imageBase64: z.string().min(1),
+  imageMediaType: z.string().min(1),
+});
+
+export const ticketExtraction = z.object({
+  tipoDocumento: z.enum(["ticket", "factura", "nota_venta", "recibo", "otro"]),
+  emisor: z
+    .object({
+      nombre: z.string().optional(),
+      rfc: z.string().optional(),
+    })
+    .optional(),
+  fecha: z.string().optional(),
+  conceptos: z
+    .array(
+      z.object({
+        descripcion: z.string(),
+        cantidad: z.number().positive().default(1),
+        valorUnitario: z.number().nonnegative(),
+        descuento: z.number().nonnegative().default(0),
+      }),
+    )
+    .min(1),
+  subtotal: z.number().optional(),
+  iva: z.number().optional(),
+  total: z.number(),
+  moneda: z.string().default("MXN"),
+  observaciones: z.string().optional(),
+});
+
 export const skillInput = {
   getEmitedInvoices: getEmitedInvoicesInput,
   getReceiptInvoices: getReceiptInvoicesInput,
   generateCSF: generateCSFInput,
   generateInvoice: generateInvoiceInput,
+  extractTicket: extractTicketInput,
 } as const;
 
 export type SkillName = keyof typeof skillInput;
@@ -72,4 +104,6 @@ export type GetEmitedInvoicesInput = z.infer<typeof getEmitedInvoicesInput>;
 export type GetReceiptInvoicesInput = z.infer<typeof getReceiptInvoicesInput>;
 export type GenerateCSFInput = z.infer<typeof generateCSFInput>;
 export type GenerateInvoiceInput = z.infer<typeof generateInvoiceInput>;
+export type ExtractTicketInput = z.infer<typeof extractTicketInput>;
+export type TicketExtraction = z.infer<typeof ticketExtraction>;
 export type Concepto = z.infer<typeof conceptoInput>;

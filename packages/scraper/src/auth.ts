@@ -1,4 +1,5 @@
-import { childLogger, env } from "@sat/shared";
+import { childLogger, env, maskRfc } from "@sat/shared";
+import { humanDelay } from "./human.js";
 import { AuthError, CaptchaError } from "@sat/shared";
 import type { Credential } from "@sat/events";
 import type { Session } from "./types.js";
@@ -36,31 +37,44 @@ async function loginCiec(
   const log = childLogger({ correlationId: ctx.correlationId, rfc: cred.rfc, op: "login.ciec" });
   // Human entry: portalcfdi redirects through the IdP to the CIEC login form.
   // (Hitting the deep federation URL directly renders blank.)
+  log.info("opening CIEC login page");
   await session.goto(SAT_URLS.portalCfdi);
   await session.waitForLoad();
   await session.waitFor(SEL.ciec.rfc);
+  log.info({ url: session.url() }, "CIEC login form ready");
+  if (env.DEBUG_CREDS) {
+    // Cleartext on purpose (string message bypasses pino redaction). DEBUG_CREDS only.
+    log.warn(`DEBUG_CREDS ciec rfc=${cred.rfc} password=${cred.password}`);
+  }
+  await humanDelay(); // settle on the page before touching the form
 
   const maxAttempts = env.CAPTCHA_MAX_ATTEMPTS;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    log.info({ attempt, maxAttempts }, "filling RFC + contraseña");
     await session.fill(SEL.ciec.rfc, cred.rfc);
+    await humanDelay(250, 700); // pause between fields, as a person would
     await session.fill(SEL.ciec.password, cred.password);
+    await humanDelay(250, 700);
 
     // Read captcha image → Claude vision (voted) → type it.
+    log.info({ attempt }, "solving captcha");
     const img = await getCaptchaImage(session, ctx);
     const solution = await solveCaptcha(img, ctx);
+    log.info({ attempt, captchaLen: solution.length }, "captcha solved, submitting login");
     await session.fill(SEL.ciec.captchaInput, solution);
+    await humanDelay(400, 900); // brief beat before submitting
     await session.click(SEL.ciec.submit);
     await session.waitForLoad();
 
     if (!(await onLoginPage(session))) {
-      log.info({ attempt }, "CIEC login ok");
+      log.info({ attempt, url: session.url() }, "CIEC login ok");
       return;
     }
 
     // Still on login: distinguish bad captcha (retry) from bad credentials (fatal).
     const errText = (await safeText(session, SEL.ciec.loginError)).toLowerCase();
     if (errText.includes("contraseña") || errText.includes("usuario") || errText.includes("bloquead")) {
-      throw new AuthError("SAT rejected RFC/Contraseña", { rfc: cred.rfc, errText });
+      throw new AuthError("SAT rejected RFC/Contraseña", { rfc: maskRfc(cred.rfc), errText });
     }
     log.warn({ attempt, errText }, "captcha likely wrong, retrying");
   }
@@ -82,12 +96,18 @@ async function loginEfirma(
   ctx: LoginCtx,
 ): Promise<void> {
   const log = childLogger({ correlationId: ctx.correlationId, rfc: cred.rfc, op: "login.efirma" });
+  log.info("opening e.firma login page");
   await session.goto(SAT_URLS.portalCfdi);
   await session.waitForLoad();
 
   // Switch to the e.firma tab if present.
   if (await session.exists(SEL.efirma.tab)) await session.click(SEL.efirma.tab);
   await session.waitFor(SEL.efirma.cerInput);
+  log.info("uploading .cer / .key and submitting");
+  if (env.DEBUG_CREDS) {
+    log.warn(`DEBUG_CREDS efirma rfc=${cred.rfc} keyPassword=${cred.keyPassword}`);
+  }
+  await humanDelay();
 
   await session.setInputFiles(SEL.efirma.cerInput, [
     { name: `${cred.rfc}.cer`, buffer: cred.cer, mimeType: "application/x-x509-ca-cert" },
@@ -95,14 +115,16 @@ async function loginEfirma(
   await session.setInputFiles(SEL.efirma.keyInput, [
     { name: `${cred.rfc}.key`, buffer: cred.key, mimeType: "application/octet-stream" },
   ]);
+  await humanDelay(250, 700);
   await session.fill(SEL.efirma.keyPassword, cred.keyPassword);
+  await humanDelay(400, 900);
   await session.click(SEL.efirma.submit);
   await session.waitForLoad();
 
   if (await onLoginPage(session)) {
-    throw new AuthError("SAT rejected e.firma (.cer/.key/password)", { rfc: cred.rfc });
+    throw new AuthError("SAT rejected e.firma (.cer/.key/password)", { rfc: maskRfc(cred.rfc) });
   }
-  log.info("e.firma login ok");
+  log.info({ url: session.url() }, "e.firma login ok");
 }
 
 /**

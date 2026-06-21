@@ -14,7 +14,13 @@ export async function runSkillViaQueue(
 ): Promise<SkillResult> {
   const added = await scrapeQueue.add(job.skill, job, {
     jobId: job.idempotencyKey,
-    attempts: 3,
+    // One retry only, and ONLY for genuinely retryable (infra) failures: the worker
+    // re-throws non-retryable AppErrors (auth_failed/validation_failed) as
+    // UnrecoverableError so BullMQ stops immediately. Each attempt is a full SAT
+    // login, so over-retrying looks like "se intenta iniciar sesión muchas veces"
+    // and risks an account lockout. The flow itself owns its internal lifecycle
+    // (session always torn down in runSkill's finally).
+    attempts: 2,
     backoff: { type: "exponential", delay: 2000 },
     removeOnComplete: 100,
     removeOnFail: 200,

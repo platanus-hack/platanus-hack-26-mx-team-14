@@ -80,5 +80,7 @@ function speak(result: import("@sat/events").SkillResult): string {
       return result.status === "previewed"
         ? `Vista previa lista: total ${result.preview.total} pesos. ¿La emito?`
         : `Factura emitida con folio ${result.issued.uuid}.`;
+    default:
+      return "Listo.";
   }
 }

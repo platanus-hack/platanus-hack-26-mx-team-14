@@ -25,7 +25,8 @@ export interface Session {
 
   click(selector: string, opts?: ClickOpts): Promise<void>;
   fill(selector: string, value: string): Promise<void>;
-  type(selector: string, value: string): Promise<void>;
+  /** Types char-by-char (fires real key events). `delayMs` adds a human pause per key. */
+  type(selector: string, value: string, opts?: { delayMs?: number }): Promise<void>;
   selectOption(selector: string, value: string): Promise<void>;
   setInputFiles(selector: string, files: UploadFile[]): Promise<void>;
 
@@ -45,7 +46,7 @@ export interface Session {
   screenshot(selector?: string): Promise<Buffer>;
 
   /** Run `trigger`, capture the file download it produces (PDF/XML). */
-  captureDownload(trigger: () => Promise<void>): Promise<Download>;
+  captureDownload(trigger: () => Promise<void>, timeoutMs?: number): Promise<Download>;
 
   /** Arbitrary JS in page context. */
   evaluate<T>(expression: string): Promise<T>;

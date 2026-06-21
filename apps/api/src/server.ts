@@ -7,12 +7,15 @@ import { skillsRoutes } from "./routes/skills.js";
 import { streamRoutes } from "./routes/stream.js";
 import { voiceRoutes } from "./routes/voice.js";
 import { agentRoutes } from "./routes/agent.js";
+import { agentVoiceRoutes } from "./routes/agentVoice.js";
 import { authRoutes } from "./routes/auth.js";
 import { publicVoiceRoutes } from "./routes/publicVoice.js";
 import { publicLlmRoutes } from "./routes/publicLlm.js";
+import { mockRoutes } from "./routes/mock.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
+    bodyLimit: 5 * 1024 * 1024, // 5 MB — allows compressed ticket images
     logger: {
       level: env.LOG_LEVEL,
       redact: { paths: ["req.headers.authorization", "password", "*.password"], censor: "[redacted]" },
@@ -21,7 +24,15 @@ export async function buildServer(): Promise<FastifyInstance> {
         : {}),
     },
   });
-  await app.register(cors, { origin: env.WEB_ORIGIN, credentials: true });
+  await app.register(cors, {
+    origin: (origin, cb) => {
+      const allowed = (env.WEB_ORIGIN ?? "").replace(/\/+$/, "");
+      const incoming = (origin ?? "").replace(/\/+$/, "");
+      if (!incoming || incoming === allowed) cb(null, true);
+      else cb(new Error("CORS not allowed"), false);
+    },
+    credentials: true,
+  });
   await app.register(fastifyJwt, { secret: env.JWT_SECRET });
 
   app.decorate("authenticate", async (req: FastifyRequest, reply: FastifyReply) => {
@@ -41,6 +52,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(streamRoutes);
   await app.register(voiceRoutes);
   await app.register(agentRoutes);
+  await app.register(agentVoiceRoutes);
+  await app.register(mockRoutes);
 
   return app;
 }
