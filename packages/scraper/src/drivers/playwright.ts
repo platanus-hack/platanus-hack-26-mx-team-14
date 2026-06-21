@@ -180,22 +180,39 @@ export class PlaywrightSession implements Session {
     const viaInlineNav = async (): Promise<Download | null> => {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
-        for (const p of ctx.pages()) {
-          const u = p.url();
-          const isNewPage = !before.has(u);
-          const movedSameTab = p === page && u !== startUrl;
-          if (isNewPage || movedSameTab) {
-            const dl = await fetchPdf(u, p === page ? "same-tab" : "new-page");
-            if (dl) return dl;
+        try {
+          for (const p of ctx.pages()) {
+            const u = p.url();
+            const isNewPage = !before.has(u);
+            const movedSameTab = p === page && u !== startUrl;
+            if (isNewPage || movedSameTab) {
+              const dl = await fetchPdf(u, p === page ? "same-tab" : "new-page");
+              if (dl) return dl;
+            }
           }
+          await page.waitForTimeout(500);
+        } catch {
+          // The page/context was closed (e.g. trigger() failed and teardown ran while
+          // we were still polling). Stop quietly — never throw from a detached page.
+          return null;
         }
-        await page.waitForTimeout(500);
       }
       return null;
     };
 
+    // Attach the download/popup listeners BEFORE triggering. In headless Chromium the
+    // `download` (or popup) event fires synchronously during the click, so starting the
+    // waitForEvent listeners after trigger() — as we used to — misses it and times out
+    // (headed's slowMo hid the race). Kicking the strategies off first arms the
+    // listeners; viaInlineNav's `before`/`startUrl` snapshots were already taken above.
+    // Guard each promise: if trigger() throws (e.g. the click navigated back to login),
+    // we rethrow below and abandon these — without the `.catch` an abandoned viaInlineNav
+    // rejecting on a closed page becomes an unhandled rejection that crashes the process.
+    const strategies = [viaDownload(), viaPopup(), viaInlineNav()].map((p) =>
+      p.catch(() => null),
+    );
     await trigger();
-    const result = await firstTruthy([viaDownload(), viaPopup(), viaInlineNav()], timeoutMs + 1000);
+    const result = await firstTruthy(strategies, timeoutMs + 1000);
     if (result) return result;
 
     log.error("no download/popup/inline PDF after trigger (timed out)");
