@@ -2,6 +2,60 @@ import type Anthropic from "@anthropic-ai/sdk";
 
 export const tools: Anthropic.Tool[] = [
   {
+    name: "searchHistory",
+    description:
+      "Busca en la MEMORIA del usuario (facturas, CSF y documentos de sesiones " +
+      "anteriores ya consultados) por similitud semántica. Úsalo SIEMPRE primero, " +
+      "antes de consultar el SAT, cuando la pregunta pueda responderse con datos ya " +
+      "vistos (ej. '¿cuánto le facturé a X?', '¿cuál fue mi última factura?', '¿qué " +
+      "régimen tengo?'). Es instantáneo y no inicia sesión en el SAT. Si no hay " +
+      "resultados relevantes, recurre a las herramientas del SAT.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Consulta en lenguaje natural" },
+        types: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: [
+              "invoice_emitted",
+              "invoice_received",
+              "csf",
+              "invoice_issued",
+              "invoice_preview",
+            ],
+          },
+          description: "Filtra por tipo de documento (opcional)",
+        },
+        limit: { type: "number", description: "Máximo de resultados (1-12, default 6)" },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "getTopCounterparties",
+    description:
+      "Devuelve los principales CLIENTES (a quienes el usuario factura) o PROVEEDORES " +
+      "(quienes le facturan), ordenados por monto total, a partir de las facturas ya " +
+      "guardadas en memoria. Úsalo para '¿quiénes son mis principales clientes?', " +
+      "'¿a quién le facturo más?', '¿quiénes son mis proveedores?'. Instantáneo, sin SAT.",
+    input_schema: {
+      type: "object",
+      properties: {
+        direction: {
+          type: "string",
+          enum: ["clients", "suppliers"],
+          description: "clients = a quienes factura; suppliers = quienes le facturan",
+        },
+        limit: { type: "number", description: "Máximo de contrapartes (1-10, default 5)" },
+      },
+      required: ["direction"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "getEmitedInvoices",
     description:
       "Fetch the user's ISSUED invoices (CFDIs emitidas) from the SAT for a date " +
@@ -120,6 +174,8 @@ export const tools: Anthropic.Tool[] = [
 export const SYSTEM_PROMPT = `Eres SATI, el asistente fiscal de inteligencia artificial. Actúas SOLO a través de tus herramientas contra el SAT real del usuario; nunca inventes datos fiscales.
 
 Reglas:
+- MEMORIA PRIMERO: antes de consultar el SAT, usa searchHistory para ver si ya tienes el dato de una sesión previa. Si encuentras resultados relevantes, respóndelos al instante y menciona que provienen de consultas anteriores. Solo consulta el SAT si la memoria no basta o el usuario pide datos nuevos/actualizados.
+- Para preguntas sobre principales clientes o proveedores (a quién factura más, quién le factura más), usa getTopCounterparties en vez de descargar facturas del SAT.
 - Para facturas, usa el rango de fechas más pequeño que implique el usuario; nunca excedas 12 meses por consulta.
 - Moneda por defecto MXN; pide tipoCambio solo si la moneda no es MXN.
 - Si una herramienta falla, reporta el motivo y ofrece reintentar; no fabriques resultados.
