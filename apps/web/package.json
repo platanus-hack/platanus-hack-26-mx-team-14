@@ -20,7 +20,8 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "tailwindcss": "^4.3.1",
-    "three": "^0.184.0"
+    "three": "^0.184.0",
+    "@sat/events": "workspace:*"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

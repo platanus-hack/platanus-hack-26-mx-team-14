@@ -1,17 +1,18 @@
 import api from '../lib/api';
-import type { SkillName, SkillResult } from '../types';
+import { mockSkillResult } from '@sat/events/mocks';
+import type { CSF, Invoice, SkillName, SkillResult } from '../types';
 import { csfSummary } from '../lib/obligaciones';
-import { csfFixture } from './csf';
-import { emitidasFixture, recibidasFixture } from './invoices';
 
 /**
- * Single switch for the whole front↔back connection.
- * TODAY: `true` → components render anonymized fixtures (real shape).
- * WHEN THE BACKEND SKILLS ARE LIVE: flip to `false` → runSkill() hits
- *   POST /skills/:skill/run and the SAME components render real SAT data.
- * (Can also be driven by an env flag: import.meta.env.VITE_USE_FIXTURES.)
+ * Data source mode (VITE_DATA_MODE):
+ *   mock    → canonical demo dataset only (default; safe for the live demo)
+ *   live    → real SAT agent only (POST /skills/:skill/run)
+ *   augment → real agent + mock fill, so thin/young accounts still look alive,
+ *             with a safe fallback to mock if the agent fails.
+ * Components downstream never change — they render the SkillResult union.
  */
-const USE_FIXTURES = true;
+type DataMode = 'mock' | 'live' | 'augment';
+const MODE: DataMode = (import.meta.env.VITE_DATA_MODE as DataMode) || 'mock';
 
 export interface Caller {
   userId: string;
@@ -19,59 +20,85 @@ export interface Caller {
   rfc: string;
 }
 
-/**
- * Run a SAT skill and return its typed result. The components downstream never
- * change between fixture and live — they render the `SkillResult` union, which
- * is identical in both modes. This function is the only place that knows where
- * the data comes from.
- */
-export async function runSkill(
+/** The canonical demo dataset (single source of truth: @sat/events/mocks). */
+function mockFor(skill: SkillName, input: Record<string, unknown> = {}): SkillResult {
+  return mockSkillResult(skill, input) as SkillResult;
+}
+
+// ── Adapters: make raw agent output safe for the components ──────────────────
+
+/** Real SAT CSF returns regimenFiscal as string[]; components want objects. */
+function normalizeCSF(csf: CSF): CSF {
+  const reg = csf.regimenFiscal as unknown as Array<string | { nombre: string; porcentaje?: number }>;
+  const regimenFiscal = (reg ?? []).map((r) => (typeof r === 'string' ? { nombre: r } : r));
+  return { ...csf, regimenFiscal };
+}
+
+function normalize(result: SkillResult): SkillResult {
+  return result.skill === 'generateCSF'
+    ? { skill: 'generateCSF', csf: normalizeCSF(result.csf) }
+    : result;
+}
+
+// ── Merge: blend real data with mock so thin accounts still look alive ───────
+
+/** Real first; mock fills the gaps. Deduped by uuid, newest first. */
+function mergeInvoices(real: Invoice[], mock: Invoice[]): Invoice[] {
+  const seen = new Set(real.map((i) => i.uuid));
+  return [...real, ...mock.filter((i) => !seen.has(i.uuid))].sort((a, b) =>
+    a.fechaEmision < b.fechaEmision ? 1 : -1,
+  );
+}
+
+function augmentWithMock(real: SkillResult): SkillResult {
+  const mock = mockFor(real.skill);
+  if (real.skill === 'getEmitedInvoices' && mock.skill === 'getEmitedInvoices') {
+    return { skill: 'getEmitedInvoices', invoices: mergeInvoices(real.invoices, mock.invoices) };
+  }
+  if (real.skill === 'getReceiptInvoices' && mock.skill === 'getReceiptInvoices') {
+    return { skill: 'getReceiptInvoices', invoices: mergeInvoices(real.invoices, mock.invoices) };
+  }
+  if (real.skill === 'generateCSF' && mock.skill === 'generateCSF') {
+    // Keep the real CSF, but fill the régimen % (a SATI estimate the SAT omits).
+    const hasPct = real.csf.regimenFiscal.some((r) => r.porcentaje != null);
+    return {
+      skill: 'generateCSF',
+      csf: hasPct ? real.csf : { ...real.csf, regimenFiscal: mock.csf.regimenFiscal },
+    };
+  }
+  return real;
+}
+
+async function callLive(
   skill: SkillName,
-  input: Record<string, unknown> = {},
+  input: Record<string, unknown>,
   caller?: Caller,
 ): Promise<SkillResult> {
-  if (USE_FIXTURES) return fixtureFor(skill);
-
   const { data } = await api.post(`/skills/${skill}/run`, {
     userId: caller?.userId,
     credentialId: caller?.credentialId,
     rfc: caller?.rfc,
     input,
   });
-  return data.result as SkillResult;
+  return normalize(data.result as SkillResult);
 }
 
-function fixtureFor(skill: SkillName): SkillResult {
-  switch (skill) {
-    case 'generateCSF':
-      return { skill: 'generateCSF', csf: csfFixture };
-    case 'getEmitedInvoices':
-      return { skill: 'getEmitedInvoices', invoices: emitidasFixture };
-    case 'getReceiptInvoices':
-      return { skill: 'getReceiptInvoices', invoices: recibidasFixture };
-    case 'generateInvoice':
-      return {
-        skill: 'generateInvoice',
-        status: 'previewed',
-        preview: {
-          receptorRfc: 'XAXX010101000',
-          conceptos: [
-            {
-              claveProdServ: '01010101',
-              descripcion: 'Prueba',
-              claveUnidad: 'H87',
-              cantidad: 1,
-              valorUnitario: 11600,
-              descuento: 0,
-              objetoImpuesto: '02',
-            },
-          ],
-          subtotal: 11600,
-          iva: 1856,
-          total: 13456,
-          rawArtifactId: 'e7f1f401-3b41-4791-93cb-163bf2140ff6',
-        },
-      };
+/**
+ * Run a SAT skill and return its typed result. The only place that knows where
+ * the data comes from — components render the same SkillResult in every mode.
+ */
+export async function runSkill(
+  skill: SkillName,
+  input: Record<string, unknown> = {},
+  caller?: Caller,
+): Promise<SkillResult> {
+  if (MODE === 'mock') return mockFor(skill, input);
+  if (MODE === 'live') return callLive(skill, input, caller);
+  // augment: real + mock; fall back to mock if the agent fails → demo never breaks.
+  try {
+    return augmentWithMock(await callLive(skill, input, caller));
+  } catch {
+    return mockFor(skill, input);
   }
 }
 
