@@ -32,10 +32,13 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   VOYAGE_API_KEY: z.string().optional(),
 
-  // Primary driver. Firecrawl is the default (managed anti-bot + live-view);
-  // CIEC flows fall back to local Playwright on infra failure, and e.firma always
-  // runs on Playwright. Without FIRECRAWL_API_KEY this degrades to Playwright.
-  SAT_DRIVER: z.enum(["playwright", "firecrawl"]).default("firecrawl"),
+  // Primary driver. Playwright is the default so every environment behaves like
+  // local unless someone EXPLICITLY opts into Firecrawl — the previous `firecrawl`
+  // default silently diverged prod (no SAT_DRIVER set + FIRECRAWL_API_KEY present →
+  // ran Firecrawl) from local Playwright. e.firma always runs on Playwright; CIEC
+  // can opt into Firecrawl (managed anti-bot + live-view) and falls back to
+  // Playwright on infra failure. Firecrawl without FIRECRAWL_API_KEY degrades to Playwright.
+  SAT_DRIVER: z.enum(["playwright", "firecrawl"]).default("playwright"),
   FIRECRAWL_API_KEY: z.string().optional(),
   ARTIFACTS_DIR: z.string().default("./artifacts-local"),
   CAPTCHA_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),

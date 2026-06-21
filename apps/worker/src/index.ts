@@ -1,6 +1,6 @@
-import { Worker } from "bullmq";
+import { Worker, UnrecoverableError } from "bullmq";
 import IORedis from "ioredis";
-import { env, childLogger, logger, keyFingerprint } from "@sat/shared";
+import { AppError, env, childLogger, logger, keyFingerprint } from "@sat/shared";
 import {
   QUEUES,
   type ScrapeJob,
@@ -29,16 +29,32 @@ const worker = new Worker<ScrapeJob, SkillResult>(
     };
 
     log.info({ kind: credential.kind, driver: env.SAT_DRIVER }, "credential ready, starting skill");
-    const result = await runSkill({
-      skill: data.skill,
-      input: data.input,
-      credential,
-      correlationId: data.correlationId,
-      userId: data.userId,
-      emit,
-    });
-    log.info({ jobId: job.id, ms: Date.now() - startedAt }, "scrape job done");
-    return result;
+    try {
+      const result = await runSkill({
+        skill: data.skill,
+        input: data.input,
+        credential,
+        correlationId: data.correlationId,
+        userId: data.userId,
+        emit,
+      });
+      log.info({ jobId: job.id, ms: Date.now() - startedAt }, "scrape job done");
+      return result;
+    } catch (err) {
+      // Deterministic, user-facing failures (auth_failed, validation_failed) won't
+      // succeed on a retry — re-attempting just logs into the SAT again and risks a
+      // lockout. Convert them to UnrecoverableError so BullMQ ends the job's lifecycle
+      // immediately instead of re-enqueuing. Genuine infra errors (retryable) bubble
+      // up untouched and get the single configured retry.
+      if (err instanceof AppError && !err.retryable) {
+        log.warn(
+          { jobId: job.id, code: err.code, ms: Date.now() - startedAt },
+          "non-retryable skill failure — not re-enqueuing",
+        );
+        throw new UnrecoverableError(err.message);
+      }
+      throw err;
+    }
   },
   {
     connection,
