@@ -121,11 +121,20 @@ export async function publicLlmAuthRoutes(app: FastifyInstance) {
     // ── 2. Loop de agente — copia exacta de /agent/voice-turn ────────────────
     const { userId, credentialId, rfc } = caller;
 
-    const messages2: Anthropic.MessageParam[] = messages
+    const allMessages: Anthropic.MessageParam[] = messages
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
-    if (messages2.length === 0) {
+    // Vapi manda el historial completo incluyendo el intercambio de auth ("103378" + "Autenticado...").
+    // Solo pasamos al agente los mensajes POSTERIORES al mensaje "Autenticado" para evitar que
+    // Claude intente procesar el código como una tarea y entre en ciclos.
+    const authIdx = allMessages.findLastIndex(
+      (m) => m.role === "assistant" && typeof m.content === "string" && m.content.startsWith("Autenticado"),
+    );
+    const messages2 = authIdx >= 0 ? allMessages.slice(authIdx + 1) : allMessages;
+
+    // Si no hay mensajes de usuario después del auth, Vapi aún no recibió respuesta nueva.
+    if (messages2.length === 0 || messages2.at(-1)?.role !== "user") {
       return sendReply("¿En qué te puedo ayudar con tus trámites fiscales?");
     }
 
