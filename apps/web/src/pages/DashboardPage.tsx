@@ -66,13 +66,23 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
   const [baseLayout, setBaseLayout] = useState<Exclude<LayoutState, 'split'>>('empty');
   const [inputText, setInputText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const contentPanelRef = useRef<HTMLDivElement>(null);
 
   const agent = useVoiceAgent();
-  const { status, messages, streamText, toolActivity, skillResult, error, sessionActive, attachedImage, attachImage, detachImage } = agent;
+  const { status, messages, streamText, thinkingText, toolActivity, skillResult, error, sessionActive, attachedImage, attachImage, detachImage } = agent;
 
   const glow = orbGlow[status] ?? orbGlow.idle;
   const orbState = orbStateMap[status] ?? 'idle';
   const imageInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-scroll to bottom when messages or streamText change
+  useEffect(() => {
+    if (contentPanelRef.current) {
+      setTimeout(() => {
+        contentPanelRef.current?.scrollTo({ top: contentPanelRef.current.scrollHeight, behavior: 'smooth' });
+      }, 0);
+    }
+  }, [messages, streamText]);
 
   // Once the agent produces its first result, the layout latches to 'split'.
   const layout: LayoutState = messages.length > 0 || skillResult ? 'split' : baseLayout;
@@ -341,6 +351,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                 {layout === 'split' && (
                   <motion.div
                     key="content-panel"
+                    ref={contentPanelRef}
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0 }}
@@ -366,7 +377,58 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                       )}
                     </AnimatePresence>
 
-                    {/* Streaming text */}
+                    {/* Full conversation history */}
+                    {messages.map((msg, i) => (
+                      <motion.div
+                        key={`msg-${i}`}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3 }}
+                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[80%] rounded-2xl px-5 py-4 ${
+                            msg.role === 'user'
+                              ? 'bg-emerald/15 border border-emerald/20 rounded-tr-sm'
+                              : 'bg-surface/80 backdrop-blur-sm border border-border rounded-tl-sm'
+                          }`}
+                        >
+                          {msg.image && (
+                            <>
+                              <img
+                                src={msg.image.previewUrl}
+                                alt="Imagen enviada"
+                                className="rounded-lg max-h-48 object-contain mb-2"
+                              />
+                              <hr className="border-t border-border/30 mb-2" />
+                            </>
+                          )}
+                          <div className={msg.role === 'assistant' ? 'text-sm leading-relaxed text-ink' : 'text-sm text-ink/80'}>
+                            {msg.role === 'assistant' ? <Markdown>{msg.content}</Markdown> : msg.content}
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+
+                    {/* Thinking block (while Claude is thinking) */}
+                    <AnimatePresence>
+                      {thinkingText && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="bg-purple-950/20 border border-purple-700/20 rounded-2xl px-5 py-4 rounded-tl-sm"
+                        >
+                          <p className="text-[10px] font-medium text-purple-300/50 uppercase tracking-wider mb-2">Pensando…</p>
+                          <p className="font-mono text-xs text-purple-200/40 leading-relaxed whitespace-pre-wrap break-words">
+                            {thinkingText}
+                          </p>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Streaming text (while responding) */}
                     <AnimatePresence>
                       {streamText && (
                         <motion.div
@@ -374,45 +436,13 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0 }}
                           transition={{ duration: 0.3 }}
-                          className="bg-surface/80 backdrop-blur-sm border border-border rounded-2xl px-5 py-4"
+                          className="bg-surface/80 backdrop-blur-sm border border-border rounded-2xl px-5 py-4 rounded-tl-sm"
                           aria-live="polite"
                         >
                           <Markdown streaming>{streamText}</Markdown>
                         </motion.div>
                       )}
                     </AnimatePresence>
-
-                    {/* Last assistant message (once stream is done) */}
-                    {!streamText && messages.length > 0 && (() => {
-                      const last = messages[messages.length - 1];
-                      if (last?.role === 'assistant') {
-                        return (
-                          <div className="bg-surface/80 border border-border rounded-2xl px-5 py-4">
-                            <Markdown>{last.content}</Markdown>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
-
-                    {/* All user messages with images */}
-                    {messages.filter(m => m.role === 'user' && m.image).map((msg, i) => (
-                      <motion.div
-                        key={`user-img-${i}`}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="bg-emerald/10 border border-emerald/15 rounded-2xl px-5 py-4 self-end max-w-[80%]"
-                      >
-                        <img
-                          src={msg.image!.previewUrl}
-                          alt="Imagen enviada"
-                          className="rounded-lg max-h-48 object-contain mb-2"
-                        />
-                        {msg.content && (
-                          <p className="text-sm text-ink/80">{msg.content}</p>
-                        )}
-                      </motion.div>
-                    ))}
 
                     {/* Dynamic skill result card */}
                     <AnimatePresence>

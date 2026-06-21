@@ -19,6 +19,7 @@ export interface UseVoiceAgentReturn {
   status: VoiceStatus;
   messages: AgentMessage[];
   streamText: string;
+  thinkingText: string;
   toolActivity: string | null;
   skillResult: SkillResult | null;
   error: string;
@@ -245,6 +246,7 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
   const [status, setStatus] = useState<VoiceStatus>('idle');
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [streamText, setStreamText] = useState('');
+  const [thinkingText, setThinkingText] = useState('');
   const [toolActivity, setToolActivity] = useState<string | null>(null);
   const [skillResult, setSkillResult] = useState<SkillResult | null>(null);
   const [error, setError] = useState('');
@@ -252,6 +254,7 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
 
   const statusRef = useRef<VoiceStatus>('idle');
   const messagesRef = useRef<AgentMessage[]>([]);
+  const initDoneRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const vadRef = useRef<VAD | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -262,7 +265,17 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
   const abortRef = useRef<AbortController | null>(null);
 
   const setS = useCallback((s: VoiceStatus) => { statusRef.current = s; setStatus(s); }, []);
-  useEffect(() => { messagesRef.current = messages; }, [messages]);
+
+  // CRITICAL: Keep messagesRef in sync with state at all times
+  // This prevents race conditions where messagesRef is empty when sendText tries to add a message
+  useEffect(() => {
+    messagesRef.current = messages;
+    if (!initDoneRef.current && messages.length > 0) {
+      initDoneRef.current = true;
+      console.log('[useVoiceAgent] Initialized with existing messages:', messages.length);
+    }
+  }, [messages]);
+
   useEffect(() => () => { doEndSession(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function stopAudio() {
@@ -309,7 +322,12 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
 
   function attachImage(file: File) {
     if (!file.type.startsWith('image/')) return;
-    compressImage(file).then(setAttachedImage).catch(() => {});
+    compressImage(file)
+      .then(setAttachedImage)
+      .catch((err) => {
+        console.error('[useVoiceAgent] Image compression failed:', err);
+        setError(`Error al procesar la imagen: ${(err as Error).message}`);
+      });
   }
 
   function detachImage() {
@@ -322,8 +340,14 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
     const image = attachedImage;
     setAttachedImage(null);
     const userMessage: AgentMessage = { role: 'user', content: text || 'Analiza esta imagen', image: image ?? undefined };
-    messagesRef.current = [...messagesRef.current, userMessage];
-    setMessages(messagesRef.current);
+
+    // Update ref AND state together to ensure synchronization
+    const updated = [...messagesRef.current, userMessage];
+    messagesRef.current = updated;
+    setMessages(updated);
+
+    console.log(`[useVoiceAgent] Added user message. Total messages now: ${updated.length}, has image: ${!!image}`);
+
     setS('processing');
     setToolActivity(null);
     await runAgentTurn({ text: text || 'Analiza esta imagen', image });
@@ -349,8 +373,12 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
     if (!USE_MOCK && token) headers['Authorization'] = `Bearer ${token}`;
 
     // Pass last 10 messages as context (images as multimodal content blocks)
-    const contextMessages = messagesRef.current.slice(-10).map(m => {
+    console.log(`[useVoiceAgent] messagesRef.current has ${messagesRef.current.length} messages`);
+    const contextMessages = messagesRef.current.slice(-10).map((m, idx) => {
+      console.log(`  Message ${idx}: role=${m.role}, hasImage=${!!m.image}, text.length=${m.content?.length || 0}`);
       if (m.image && m.role === 'user') {
+        const imageDataLength = m.image.base64?.length || 0;
+        console.log(`    -> Converting to multimodal (image size: ${Math.round(imageDataLength / 1024)}KB)`);
         return {
           role: m.role as "user" | "assistant",
           content: [
@@ -385,7 +413,7 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
             setMessages(prev => [...prev, { role: 'user', content: ev.userText as string }]);
             break;
           case 'thinking':
-            setToolActivity('Pensando…');
+            setThinkingText((ev.content as string) || '');
             break;
           case 'tool_call':
             setToolActivity((ev.label ?? ev.name) as string);
@@ -403,8 +431,11 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
             break;
           case 'done': {
             if (assistantAcc) {
-              setMessages(prev => [...prev, { role: 'assistant', content: assistantAcc }]);
+              const updated = [...messagesRef.current, { role: 'assistant', content: assistantAcc }];
+              messagesRef.current = updated;
+              setMessages(updated);
               setStreamText('');
+              setThinkingText('');
             }
             if (ev.skillResult) setSkillResult(ev.skillResult as SkillResult);
             setToolActivity(null);
@@ -486,6 +517,7 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
     status,
     messages,
     streamText,
+    thinkingText,
     toolActivity,
     skillResult,
     error,

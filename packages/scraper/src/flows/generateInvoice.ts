@@ -14,26 +14,54 @@ const RFC_GENERICO_EXTRANJERO = "XEXX010101000";
 /**
  * Dismiss any Bootstrap error modal that might be blocking pointer events.
  * The SAT portal sometimes shows #modal-error with data-backdrop="static"
- * which intercepts clicks on underlying buttons.
+ * which intercepts clicks on underlying buttons. We force-close it and any
+ * related backdrops, even if it doesn't exist (best-effort, never throws).
  */
 async function dismissErrorModals(session: Session): Promise<void> {
-  const hasError = await session.exists(SEL.factura.errorModal).catch(() => false);
-  if (hasError) {
-    await session
-      .evaluate(
-        `(() => {
-          const modals = document.querySelectorAll('#modal-error.in, .modal.error.in');
-          modals.forEach(m => {
-            m.classList.remove('in');
-            m.style.display = 'none';
-            const backdrop = document.querySelector('.modal-backdrop');
-            if (backdrop) backdrop.remove();
-            document.body.classList.remove('modal-open');
-            document.body.style.overflow = '';
-          });
-        })()`,
-      )
-      .catch(() => {});
+  await session
+    .evaluate(
+      `(() => {
+        // Find all visible error modals (they can appear after the call)
+        const modals = document.querySelectorAll(
+          '#modal-error, #modal-error.in, .modal.error, .modal.error.in'
+        );
+        let dismissed = false;
+        modals.forEach(m => {
+          // Remove any .in class (Bootstrap "in" = visible)
+          m.classList.remove('in');
+          // Hide the element itself
+          m.style.display = 'none';
+          m.style.visibility = 'hidden';
+          m.setAttribute('aria-hidden', 'true');
+          // Remove pointer-events so it can't intercept clicks even if visible
+          m.style.pointerEvents = 'none';
+          dismissed = true;
+        });
+        // Clean up all modal backdrops (prevent overflow: hidden lock)
+        document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.overflow = '';
+        return dismissed;
+      })()`,
+    )
+    .catch(() => {});
+}
+
+/**
+ * Click a selector, retrying once if it fails (likely due to error modal blocking).
+ * Dismisses modals on retry — usually clears the blocker.
+ */
+async function clickWithErrorDismiss(session: Session, selector: string): Promise<void> {
+  try {
+    await session.click(selector);
+  } catch (err) {
+    // Check if it's a "intercepts pointer events" timeout (modal blocking).
+    if ((err as Error).message?.includes("intercepts pointer events")) {
+      await dismissErrorModals(session);
+      await session.click(selector); // Retry; let it fail if modal is still there
+    } else {
+      throw err;
+    }
   }
 }
 
@@ -207,7 +235,7 @@ export async function generateInvoice(
   step(ctx, "Agregando conceptos");
   await assertConceptoSelectorsCaptured();
   for (const c of input.conceptos) {
-    await session.click(SEL.factura.agregarConcepto);
+    await clickWithErrorDismiss(session, SEL.factura.agregarConcepto);
     // The edit row renders after "Agregar"; wait for its first field before filling.
     await session.waitFor(SEL.factura.descripcion, { state: "visible", timeoutMs: 10_000 });
     // ClaveProdServ / ClaveUnidad are catalog autocompletes; the rest are plain inputs.
@@ -221,19 +249,19 @@ export async function generateInvoice(
     if (c.numeroIdentificacion)
       await session.fill(SEL.factura.numeroIdentificacion, c.numeroIdentificacion);
     await dismissErrorModals(session);
-    await session.click(SEL.factura.guardarConcepto);
+    await clickWithErrorDismiss(session, SEL.factura.guardarConcepto);
     await session.waitForHidden(SEL.factura.loadingModal);
   }
 
   step(ctx, "Guardando borrador");
   await dismissErrorModals(session);
-  await session.click(SEL.factura.guardar);
+  await clickWithErrorDismiss(session, SEL.factura.guardar);
   await session.waitForHidden(SEL.factura.loadingModal);
 
   step(ctx, "Generando vista previa");
   await dismissErrorModals(session);
   const download = await session.captureDownload(async () => {
-    await session.click(SEL.factura.vistaPrevia);
+    await clickWithErrorDismiss(session, SEL.factura.vistaPrevia);
   });
   const previewArtifact = await storeArtifact("pdf", download.buffer, {
     correlationId: ctx.correlationId,
@@ -270,7 +298,7 @@ export async function generateInvoice(
 
   // Confirmed by a human: seal/emit.
   step(ctx, "Sellando y emitiendo la factura");
-  await session.click(SEL.factura.sellar);
+  await clickWithErrorDismiss(session, SEL.factura.sellar);
   await session.waitForHidden(SEL.factura.loadingModal);
 
   const uuid = await session

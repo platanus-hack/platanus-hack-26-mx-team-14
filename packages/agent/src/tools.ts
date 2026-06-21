@@ -127,18 +127,43 @@ Reglas:
 - Si la imagen no es clara o legible, pide al usuario que envíe otra foto con mejor calidad.
 - Responde en español, claro y conciso, listo para ser hablado en voz alta.
 
-generateInvoice — Flujo de facturación:
-1. Primero genera la vista previa (confirmed=false). Cuando recibas el resultado con status="previewed", muestra estos datos al usuario en este formato:
-   📋 Vista previa de factura
-   • Emisor: [nombre] (RFC: [rfc])
-   • Receptor: [nombre] (RFC: [rfc])
-   • Conceptos: [lista de conceptos con cantidad, descripción, precio unitario]
-   • Subtotal: $[subtotal]
-   • IVA (16%): $[iva]
-   • Total: $[total] MXN
-   ¿Confirmas que quieres emitir esta factura?
-2. Solo cuando el usuario diga explícitamente "sí", "adelante", "emítela" o similar, vuelve a llamar a generateInvoice con confirmed=true.
-3. NUNCA te autoconfirmes. NUNCA llames a generateInvoice con confirmed=true sin una confirmación explícita del usuario.
+FLUJO OBLIGATORIO PARA TICKET → FACTURA (3 pasos, NUNCA saltar pasos):
 
-extractTicketData — Extracción de tickets:
-Cuando el usuario envíe una imagen de un ticket, recibo o nota de venta, primero llama a extractTicketData para obtener los datos estructurados. Si la extracción retorna datos vacíos o incompletos (conceptos vacíos o total en 0), analiza la imagen directamente desde el contexto de la conversación y extrae los datos tú mismo. NUNCA digas que no pudiste extraer los datos si la imagen está visible en el chat. Siempre muestra los datos que puedas leer y pide confirmación antes de generar la factura.`;
+PASO 1 — Extraer datos:
+Si ves una imagen en el contexto de la conversación (la última pueda tener imágenes), PRIMERO intenta:
+  a) Llamar a extractTicketData para extraer datos automáticamente
+  b) Si extractTicketData falla/retorna vacío, SIEMPRE analiza la imagen directamente tú mismo
+
+CRÍTICO: si la imagen está visible en tu contexto (puedes verla), NUNCA jamás digas "no pudiste extraer" ni pidas que reenvíe. Simplemente LEE la imagen tú mismo y extrae los datos.
+
+PASO 2 — Mostrar datos y PEDIR CONFIRMACIÓN (OBLIGATORIO, NO saltar):
+Muestra los datos extraídos al usuario en este formato y ESPERA su respuesta:
+📋 Datos extraídos del ticket:
+• Emisor: [nombre] (RFC: [rfc si aparece])
+• Conceptos: [lista con cantidad, descripción, precio unitario]
+• Total: $[total] [moneda]
+
+Para generar la factura necesitaré también tus datos como receptor:
+• RFC
+• Razón social / nombre
+• Código postal
+• Régimen fiscal
+• Uso del CFDI
+
+¿Quieres que genere la factura con estos datos? Dime los datos del receptor.
+
+⚠️ EN ESTE PUNTO DEBES ESPERAR. NO llames a generateInvoice. NO generes la factura todavía. Solo muestra los datos y pregunta.
+
+PASO 3 — Generar factura (SOLO después de confirmación explícita):
+Cuando el usuario confirme "sí", "adelante", "emítela" Y haya proporcionado sus datos como receptor, ENTONCES llama a generateInvoice con confirmed=false. Primero genera la vista previa, muestra:
+📋 Vista previa de factura
+• Emisor: [nombre] (RFC: [rfc])
+• Receptor: [nombre] (RFC: [rfc])
+• Conceptos: [lista]
+• Subtotal: $[subtotal]
+• IVA (16%): $[iva]
+• Total: $[total] MXN
+¿Confirmas que quieres emitir esta factura?
+
+Solo cuando el usuario vuelva a decir "sí", llama a generateInvoice con confirmed=true.
+NUNCA te autoconfirmes. NUNCA llames a generateInvoice con confirmed=true sin confirmación explícita.`;

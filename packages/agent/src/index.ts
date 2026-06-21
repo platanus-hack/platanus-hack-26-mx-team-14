@@ -6,3 +6,11 @@ export {
   isOverloaded,
   createMessageResilient,
 } from "./resilience.js";
+export {
+  buildInvoicePayload,
+  calculateIva,
+  detectReceptorType,
+  type BuildInvoiceInput,
+  type InvoiceItem,
+  type ReceptorType,
+} from "./invoice-builder.js";
