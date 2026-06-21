@@ -35,10 +35,7 @@ export function useWaitingStatus(active: boolean): string | null {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!active) {
-      setMessage(null);
-      return;
-    }
+    if (!active) return;
     const start = Date.now();
     let idx = 0;
     const pick = () => {
@@ -52,5 +49,7 @@ export function useWaitingStatus(active: boolean): string | null {
     return () => clearInterval(id);
   }, [active]);
 
-  return message;
+  // Derive null when inactive instead of setState-in-effect (no stale message:
+  // pick() runs immediately on activation).
+  return active ? message : null;
 }

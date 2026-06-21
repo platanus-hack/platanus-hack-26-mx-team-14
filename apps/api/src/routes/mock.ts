@@ -1,5 +1,14 @@
 import { PassThrough } from "node:stream";
 import type { FastifyInstance } from "fastify";
+import { mockSkillResult, type Invoice } from "@sat/events";
+import { parseDateRange, rangeInput } from "../dateRange.js";
+
+/** Curated demo invoices (@sat/events), honoring a date phrase in the query. */
+function demoInvoices(text: string, emitted: boolean): Invoice[] {
+  const skill = emitted ? "getEmitedInvoices" : "getReceiptInvoices";
+  const fx = mockSkillResult(skill, rangeInput(parseDateRange(text)));
+  return "invoices" in fx ? fx.invoices : [];
+}
 
 const MOCK_RFC_EMISOR = "GAMO840512HDF";
 const MOCK_RFC_RECEPTOR = "XAXX010101000";
@@ -112,7 +121,7 @@ export async function mockRoutes(app: FastifyInstance) {
         } else if (text.includes("recib") || text.includes("me facturaron") || text.includes("recibidas")) {
           send({ type: "tool_call", name: "getReceiptInvoices", label: "Consultando facturas recibidas…" });
           await delay(1400);
-          const invoices = fakeInvoices(8, false);
+          const invoices = demoInvoices(text, false);
           const result = { skill: "getReceiptInvoices", invoices };
           send({ type: "tool_result", skill: "getReceiptInvoices", result });
           await delay(300);
@@ -132,7 +141,7 @@ export async function mockRoutes(app: FastifyInstance) {
           // default: emitted invoices
           send({ type: "tool_call", name: "getEmitedInvoices", label: "Consultando facturas emitidas…" });
           await delay(1400);
-          const invoices = fakeInvoices(12, true);
+          const invoices = demoInvoices(text, true);
           const result = { skill: "getEmitedInvoices", invoices };
           send({ type: "tool_result", skill: "getEmitedInvoices", result });
           await delay(300);

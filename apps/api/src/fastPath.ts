@@ -7,6 +7,7 @@ import {
   type Invoice,
   type CSF,
 } from "@sat/events";
+import { parseDateRange, rangeInput, type DateRange } from "./dateRange.js";
 
 /**
  * Fast-path resolver: answers very common questions DIRECTLY from the DB (the RAG
@@ -62,6 +63,7 @@ async function invoicesFromDb(
   userId: string,
   rfc: string,
   kind: "emitted" | "received",
+  range?: DateRange | null,
 ): Promise<Invoice[]> {
   const types: DocType[] =
     kind === "emitted" ? ["invoice_emitted", "invoice_issued"] : ["invoice_received"];
@@ -71,6 +73,12 @@ async function invoicesFromDb(
     inArray(documents.type, types),
   ];
   if (rfc) where.push(eq(documents.rfc, rfc));
+  // Date filter: compare on the YYYY-MM-DD prefix so date-only and ISO-timestamp
+  // fechaEmision both work. Strings compare lexicographically.
+  if (range) {
+    where.push(sql`substring((metadata->>'fechaEmision') from 1 for 10) >= ${range.from}`);
+    where.push(sql`substring((metadata->>'fechaEmision') from 1 for 10) <= ${range.to}`);
+  }
   const rows = await db()
     .select({ metadata: documents.metadata })
     .from(documents)
@@ -139,14 +147,16 @@ export async function resolveFastPath(
   };
 
   if (intent === "emitted" || intent === "received") {
-    const invoices = await invoicesFromDb(userId, rfc, intent);
+    // Honor a date phrase ("este mes", "marzo", …) on BOTH the real DB and the
+    // demo fixtures, so "facturas de este mes" returns only that month.
+    const range = parseDateRange(text);
+    const skill = intent === "emitted" ? "getEmitedInvoices" : "getReceiptInvoices";
+    const invoices = await invoicesFromDb(userId, rfc, intent, range);
     if (invoices.length > 0) {
-      const skill = intent === "emitted" ? "getEmitedInvoices" : "getReceiptInvoices";
       return done({ reply: invoiceReply(invoices, intent), skillResult: { skill, invoices }, source: "db" });
     }
     if (!FIXTURES_ENABLED) return null;
-    const skill = intent === "emitted" ? "getEmitedInvoices" : "getReceiptInvoices";
-    const fx = mockSkillResult(skill);
+    const fx = mockSkillResult(skill, rangeInput(range));
     const fxInvoices = "invoices" in fx ? fx.invoices : [];
     return done({ reply: invoiceReply(fxInvoices, intent), skillResult: fx, source: "fixture" });
   }

@@ -77,7 +77,9 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
   const [baseLayout, setBaseLayout] = useState<Exclude<LayoutState, 'split'>>('empty');
   const [inputText, setInputText] = useState('');
   const [isDragging, setIsDragging] = useState(false);
-  const [dropError, setError] = useState('');
+  // Local validation error (e.g. dropping a non-image); the agent's own `error`
+  // is read-only, so drop-zone messages need their own state.
+  const [dropError, setDropError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const contentPanelRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -163,9 +165,10 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
     if (files && files.length > 0) {
       const file = files[0];
       if (file.type.startsWith('image/')) {
+        setDropError(null);
         attachImage(file);
       } else {
-        setError('Por favor arrastra una imagen válida (JPG, PNG, GIF, WebP)');
+        setDropError('Por favor arrastra una imagen válida (JPG, PNG, GIF, WebP)');
       }
     }
   }
