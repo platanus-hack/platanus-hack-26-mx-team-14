@@ -1,5 +1,5 @@
 import api from '../lib/api';
-import { mockSkillResult } from '@sat/events/mocks';
+import { mockSkillResult } from './mocks';
 import type { CSF, Invoice, SkillName, SkillResult } from '../types';
 import { csfSummary } from '../lib/obligaciones';
 
