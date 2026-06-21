@@ -122,7 +122,6 @@ function PieChart({ data, donut, color }: { data: WidgetDataPoint[]; donut?: boo
 // ── Bar Chart ───────────────────────────────────────────────────────────────
 
 function BarChart({ data, color, series }: { data: WidgetDataPoint[]; color?: string; series?: string[] }) {
-  const reduce = useReducedMotion();
   const [hovered, setHovered] = useState<string | null>(null);
 
   // Multi-series: series[0] = "value" (always), series[1..] = extra keys in data
