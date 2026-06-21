@@ -145,10 +145,15 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
       {/* Header */}
       <header className="relative shrink-0 border-b border-border bg-bg/70 backdrop-blur-md" style={{ zIndex: 10 }}>
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <img src={owlLogo} alt="" aria-hidden="true" className="w-7 h-7 rounded-full object-cover" style={{ objectPosition: 'center 18%' }} />
+          <button
+            type="button"
+            onClick={() => onNavigate('landing')}
+            className="flex items-center gap-2 group"
+            aria-label="Ir al inicio"
+          >
+            <img src={owlLogo} alt="" aria-hidden="true" className="w-7 h-7 rounded-full object-cover group-hover:opacity-85 transition-opacity" style={{ objectPosition: 'center 18%' }} />
             <span className="font-semibold text-ink text-sm tracking-tight">SATI</span>
-          </div>
+          </button>
 
           <div className="flex items-center gap-3">
             {/* Status pill */}
