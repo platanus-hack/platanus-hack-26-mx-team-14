@@ -17,11 +17,18 @@ export class PlaywrightDriver implements BrowserDriver {
   private async getBrowser(): Promise<Browser> {
     if (this.browser) return this.browser;
     const { chromium } = await import("playwright");
-    // HEADED=1 → watch the browser drive the SAT (great for debugging selectors).
-    const headed = process.env.HEADED === "1" || process.env.HEADED === "true";
+    // Two independent knobs:
+    //   HEADED=1      → visible window + slowMo, to watch it drive the SAT locally.
+    //   SAT_HEADFUL=1 → real (non-headless) Chromium with NO visible window, rendered
+    //                   to a virtual display (Xvfb) in Docker. The SAT logs a HEADLESS
+    //                   browser out on the CSF download click (bounces to iniciar-sesion),
+    //                   so the worker/prod must run non-headless to match local behavior.
+    const isOn = (v: string | undefined) => v === "1" || v === "true";
+    const visible = isOn(process.env.HEADED);
+    const headful = visible || isOn(process.env.SAT_HEADFUL);
     this.browser = await chromium.launch({
-      headless: !headed,
-      slowMo: headed ? 250 : 0,
+      headless: !headful,
+      slowMo: visible ? 250 : 0,
       args: [
         "--no-sandbox",               // required in Docker (no user namespace)
         "--disable-setuid-sandbox",
@@ -32,6 +39,11 @@ export class PlaywrightDriver implements BrowserDriver {
         "--disable-default-apps",
         "--no-first-run",
         "--no-zygote",                // reduces child process overhead in constrained envs
+        // Anti-automation: the SAT invalidates the session right after login on Linux
+        // (bounces to /iniciar-sesion) but not on macOS. These hide the most common
+        // automation tells so the portal treats us like a normal Chrome.
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=IsolateOrigins,site-per-process",
       ],
     });
     return this.browser;
@@ -42,7 +54,19 @@ export class PlaywrightDriver implements BrowserDriver {
     const context = await browser.newContext({
       acceptDownloads: true,
       locale: "es-MX",
+      timezoneId: "America/Mexico_City",
+      // A real desktop Chrome UA on Linux (Playwright's default Chromium UA can carry
+      // tells the SAT keys off). Keep the major version in sync with the base image.
+      userAgent:
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
     });
+    // Mask the headless/automation fingerprint before any SAT script runs.
+    await context.addInitScript(
+      "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });" +
+        "window.chrome = window.chrome || { runtime: {} };" +
+        "Object.defineProperty(navigator, 'languages', { get: () => ['es-MX', 'es'] });" +
+        "Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });",
+    );
     const page = await context.newPage();
     return new PlaywrightSession(uuid(), context, page);
   }
@@ -144,6 +168,23 @@ export class PlaywrightSession implements Session {
     const before = new Set(ctx.pages().map((p) => p.url()));
     log.info({ timeoutMs }, "waiting for download/popup/inline-pdf after trigger");
 
+    // DIAGNOSTICS: the SAT serves the CSF differently across environments (macOS vs
+    // Linux/Xvfb). Log every page/popup, every download event, and what the trigger
+    // does — so we see the actual mechanism instead of guessing which strategy to use.
+    page.on("popup", (p) => log.info({ url: p.url() }, "DIAG popup event on main page"));
+    page.on("download", (d) =>
+      log.info({ filename: d.suggestedFilename() }, "DIAG download event on MAIN page"));
+    page.on("filechooser", () => log.info("DIAG filechooser on main page"));
+    page.on("dialog", (d) =>
+      log.info({ type: d.type(), message: d.message() }, "DIAG js dialog on main page"));
+    ctx.on("page", (p) => {
+      log.info({ url: p.url() }, "DIAG new page/popup opened in context");
+      p.on("download", (d) =>
+        log.info({ url: p.url(), filename: d.suggestedFilename() }, "DIAG download event on POPUP"));
+      p.on("framenavigated", () => log.info({ url: p.url() }, "DIAG popup navigated"));
+      p.on("close", () => log.info("DIAG popup closed"));
+    });
+
     const readDownloadEvent = async (d: PwDownload, via: string): Promise<Download> => {
       const filename = d.suggestedFilename();
       const stream = await d.createReadStream();
@@ -216,6 +257,12 @@ export class PlaywrightSession implements Session {
     };
 
     await trigger();
+    // DIAG: snapshot the context right after the click + 2s later (lets a popup/nav land).
+    log.info({ pages: ctx.pages().map((p) => p.url()) }, "DIAG pages right after trigger");
+    void page
+      .waitForTimeout(2000)
+      .then(() => log.info({ pages: ctx.pages().map((p) => p.url()) }, "DIAG pages 2s after trigger"))
+      .catch(() => void 0);
     const result = await firstTruthy([viaDownload, viaPopup(), viaInlineNav()], timeoutMs + 1000);
     if (result) return result;
 

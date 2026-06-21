@@ -71,12 +71,38 @@ export async function generateCSF(ctx: FlowContext): Promise<CSF> {
   }
   log.info("Constancia button visible");
 
+  // The Constancia button is a Svelte component. On a slow (containerized) host the
+  // click can land BEFORE hydration wires the JS handler → the default navigation
+  // fires and the SAT bounces the tab to /iniciar-sesion (observed in Docker, never
+  // on macOS). Let the page settle and patch window.open so, if the button opens the
+  // PDF in a new tab, we also capture the URL directly (and can fetch it with cookies).
+  await session.waitForLoad();
+  await humanDelay(2500, 3500); // give Svelte time to hydrate before clicking
+  await session
+    .evaluate(
+      `(() => { if (!window.__satOpenPatched) { window.__satOpen = []; const o = window.open; window.open = function (u) { try { window.__satOpen.push(String(u)); } catch (e) {} return o.apply(this, arguments); }; window.__satOpenPatched = 1; } })()`,
+    )
+    .catch(() => void 0);
+
   // The portal sometimes shows an intermediate page before the actual PDF download.
   // Strategy: start listening for the download event, click the primary button,
   // wait up to 5 s for an intermediate "Generar/Descargar" button — if one appears
   // click it too. The captureDownload timeout is generous (90 s) to cover slow SAT servers.
   const download = await session.captureDownload(async () => {
     await session.click(SEL.csf.constanciaLink);
+    // DIAG: what did the click actually do? (window.open URL captured, current URL)
+    const opened = await session
+      .evaluate<string[]>(`window.__satOpen || []`)
+      .catch(() => [] as string[]);
+    log.info({ opened, url: session.url() }, "DIAG after Constancia click");
+    // Fail fast: if the click bounced us to login, no PDF will ever come — don't sit
+    // in captureDownload for 90 s. Non-retryable so BullMQ won't re-enqueue (relogin).
+    if (session.url().includes("iniciar-sesion")) {
+      throw new AuthError(
+        "El SAT cerró la sesión al abrir la Constancia (no se generó el PDF).",
+        { rfc: credential.rfc, opened },
+      );
+    }
     // Intermediate page — click the download trigger if it appears within 5 s.
     await session.waitFor(SEL.csf.descargar, { timeoutMs: 5000 }).catch(() => void 0);
     if (await session.exists(SEL.csf.descargar)) {
