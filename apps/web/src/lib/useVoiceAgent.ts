@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { OrbState, SkillResult } from '../types';
+import { AudioStreamPlayer, SUPPORTS_MSE } from './audioStream';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
@@ -71,6 +72,7 @@ export function useVoiceAgent(opts: VoiceAgentOptions = {}) {
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const playerRef = useRef<AudioStreamPlayer | null>(null);
   // Latest callbacks without re-creating start/stop on every render.
   const optsRef = useRef(opts);
   useEffect(() => { optsRef.current = opts; });
@@ -84,8 +86,20 @@ export function useVoiceAgent(opts: VoiceAgentOptions = {}) {
   const send = useCallback(async (audioBase64: string, mimeType: string) => {
     const o = optsRef.current;
     setBusy(true);
+    // Orb goes to thinking the instant we start — masks STT+LLM latency.
     o.onStatus?.('thinking');
-    const audioChunks: string[] = [];
+
+    // Streaming player: narration starts the moment the first TTS chunk lands,
+    // overlapping the panel that already rendered on the `skill` event.
+    let player: AudioStreamPlayer | null = null;
+    const fallbackChunks: string[] = [];
+    if (SUPPORTS_MSE) {
+      player = new AudioStreamPlayer();
+      playerRef.current = player;
+      player.onPlaying = () => o.onStatus?.('speaking');
+      player.onEnded = () => { playerRef.current = null; o.onStatus?.('idle'); setBusy(false); };
+    }
+
     try {
       const res = await fetch(`${API_BASE}/public/voice/stream`, {
         method: 'POST',
@@ -100,13 +114,14 @@ export function useVoiceAgent(opts: VoiceAgentOptions = {}) {
             if (ev.userText) o.onTranscript?.(ev.userText);
             break;
           case 'skill':
+            // Render the panel immediately — never wait for the audio.
             if (ev.result) o.onSkill?.(ev.result);
             break;
           case 'text':
             if (ev.chunk) o.onReply?.(ev.chunk);
             break;
           case 'audio':
-            if (ev.chunk) audioChunks.push(ev.chunk);
+            if (ev.chunk) { if (player) player.push(ev.chunk); else fallbackChunks.push(ev.chunk); }
             break;
           case 'error':
             throw new Error(ev.message ?? 'Error del servidor');
@@ -115,9 +130,11 @@ export function useVoiceAgent(opts: VoiceAgentOptions = {}) {
         }
       }
 
-      // Play the narration once the stream is complete.
-      if (audioChunks.length > 0) {
-        const bytes = audioChunks.flatMap((c) => Array.from(atob(c), (ch) => ch.charCodeAt(0)));
+      if (player) {
+        player.end(); // remaining buffered audio plays out; onEnded resets state
+      } else if (fallbackChunks.length > 0) {
+        // No MSE (e.g. Safari): assemble and play once.
+        const bytes = fallbackChunks.flatMap((c) => Array.from(atob(c), (ch) => ch.charCodeAt(0)));
         const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'audio/mpeg' }));
         const audio = new Audio(url);
         audioRef.current = audio;
@@ -130,6 +147,8 @@ export function useVoiceAgent(opts: VoiceAgentOptions = {}) {
         setBusy(false);
       }
     } catch (err) {
+      player?.destroy();
+      playerRef.current = null;
       o.onError?.((err as Error).message);
       o.onStatus?.('idle');
       setBusy(false);
@@ -180,6 +199,7 @@ export function useVoiceAgent(opts: VoiceAgentOptions = {}) {
   // Tear down mic + audio on unmount.
   useEffect(() => () => {
     audioRef.current?.pause();
+    playerRef.current?.destroy();
     streamRef.current?.getTracks().forEach((t) => t.stop());
   }, []);
 
