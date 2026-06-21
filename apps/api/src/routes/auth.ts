@@ -8,6 +8,16 @@ import { seal } from "@sat/shared";
 
 const scryptAsync = promisify(scrypt);
 
+async function generateIdentificationCode(): Promise<string> {
+  for (let i = 0; i < 10; i++) {
+    const num = (randomBytes(3).readUIntBE(0, 3) % 900000) + 100000;
+    const code = num.toString();
+    const existing = await db().select().from(users).where(eq(users.identificationCode, code)).limit(1);
+    if (existing.length === 0) return code;
+  }
+  throw new Error("No se pudo generar un código único");
+}
+
 async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString("hex");
   const hash = (await scryptAsync(password, salt, 64)) as Buffer;
@@ -41,9 +51,10 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const passwordHash = await hashPassword(password);
+    const identificationCode = await generateIdentificationCode();
     const inserted = await db()
       .insert(users)
-      .values({ email, displayName: name, passwordHash })
+      .values({ email, displayName: name, passwordHash, identificationCode })
       .returning();
     const user = inserted[0];
     if (!user) return reply.code(500).send({ error: "Error al crear usuario" });
@@ -71,7 +82,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     return reply.code(201).send({
       token,
-      user: { id: user.id, email: user.email, displayName: user.displayName },
+      user: { id: user.id, email: user.email, displayName: user.displayName, identificationCode: user.identificationCode },
     });
   });
 
@@ -114,7 +125,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     return reply.send({
       token,
-      user: { id: user.id, email: user.email, displayName: user.displayName },
+      user: { id: user.id, email: user.email, displayName: user.displayName, identificationCode: user.identificationCode },
     });
   });
 
@@ -136,6 +147,7 @@ export async function authRoutes(app: FastifyInstance) {
       id: user.id,
       email: user.email,
       displayName: user.displayName,
+      identificationCode: user.identificationCode,
       credentialId: cred?.id ?? null,
       rfc: cred?.rfc ?? null,
     });

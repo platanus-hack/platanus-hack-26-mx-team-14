@@ -106,7 +106,6 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
       }
 
       // 2 — Agent agentic loop
-      send({ type: "thinking" });
 
       // If the last incoming message already contains the user text (e.g. with an image),
       // don't add a duplicate text-only message.
@@ -124,14 +123,33 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
       }
 
       // Log message summary for debugging
-      const imageCount = messages.filter((m) => {
+      const imageMessages = messages.filter((m) => {
         const c = m.content;
         return Array.isArray(c) && c.some((b) => b.type === "image");
-      }).length;
+      });
+      const imageCount = imageMessages.length;
       req.log.info(
         { totalMessages: messages.length, imageMessages: imageCount, userTextLength: userText.length },
         "agent turn started",
       );
+
+      // Detailed logging for first image (debug why extraction might fail)
+      if (imageCount > 0) {
+        const firstImageMsg = imageMessages[0]!;
+        const imageBlocks = Array.isArray(firstImageMsg.content)
+          ? firstImageMsg.content.filter((b) => b.type === "image")
+          : [];
+        const sizeKb = imageBlocks.reduce((sum, b) => {
+          if ("source" in b && "data" in b.source) {
+            return sum + (b.source.data as string).length / 1024;
+          }
+          return sum;
+        }, 0);
+        req.log.debug(
+          { imageCount: imageBlocks.length, sizeKb: Math.round(sizeKb) },
+          "image blocks detected",
+        );
+      }
 
       let lastSkillResult: SkillResult | null = null;
       let finalReply = "";
@@ -149,6 +167,14 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
           },
           req.log,
         );
+
+        // Extract and send thinking content
+        const thinkingBlock = res.content.find((b) => b.type === "thinking");
+        if (thinkingBlock && "thinking" in thinkingBlock) {
+          const thinkingText = (thinkingBlock.thinking as string).slice(0, 500); // First 500 chars
+          send({ type: "thinking", content: thinkingText });
+        }
+
         messages.push({ role: "assistant", content: res.content });
 
         if (res.stop_reason !== "tool_use") {
