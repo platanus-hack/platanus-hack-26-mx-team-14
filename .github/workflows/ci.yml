@@ -1,0 +1,88 @@
+name: CI
+
+# Corre en cada push (cualquier rama) y en cada PR. Como commiteamos seguido,
+# cancelamos corridas anteriores del mismo ref para no encolar trabajo viejo.
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Gate duro: lo que rompe a todo el equipo (deps + tipos + build) ────────
+  verify:
+    name: verify (typecheck + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TURBO_CACHE_DIR: .turbo
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4 # lee la versión de "packageManager" en package.json
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Cache de turbo: acelera typecheck/build reusando resultados entre corridas.
+      - name: Cache turbo
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
+      # --frozen-lockfile falla si el lockfile no coincide con package.json
+      # (exactamente el bug de deps sin instalar que rompió main).
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+  # ── Informativo: no bloquea. Surface de problemas de lint sin frenar pushes ─
+  lint:
+    name: lint (informativo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  # ── CD: deploy a Render SOLO en main y SOLO si verify pasó ─────────────────
+  # Requiere el secret RENDER_DEPLOY_HOOK_URL (Render → Service → Settings →
+  # Deploy Hook). Si no está configurado, el job se salta solo.
+  deploy:
+    name: deploy (main)
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger Render deploy
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL no configurado — se omite el deploy."
+            exit 0
+          fi
+          echo "Disparando deploy en Render…"
+          curl -fsSL -X POST "$HOOK"
