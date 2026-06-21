@@ -1,4 +1,4 @@
-import type { Browser, BrowserContext, Page } from "playwright";
+import type { Browser, BrowserContext, Page, Download as PwDownload } from "playwright";
 import { uuid, childLogger } from "@sat/shared";
 import type {
   BrowserDriver,
@@ -144,6 +144,16 @@ export class PlaywrightSession implements Session {
     const before = new Set(ctx.pages().map((p) => p.url()));
     log.info({ timeoutMs }, "waiting for download/popup/inline-pdf after trigger");
 
+    const readDownloadEvent = async (d: PwDownload, via: string): Promise<Download> => {
+      const filename = d.suggestedFilename();
+      const stream = await d.createReadStream();
+      const chunks: Buffer[] = [];
+      for await (const c of stream) chunks.push(c as Buffer);
+      const buffer = Buffer.concat(chunks);
+      log.info({ via, filename, bytes: buffer.length }, "download captured");
+      return { buffer, filename };
+    };
+
     const fetchPdf = async (url: string, via: string): Promise<Download | null> => {
       if (!url || url === "about:blank") return null;
       const resp = await ctx.request.get(url).catch(() => null);
@@ -157,18 +167,29 @@ export class PlaywrightSession implements Session {
       return { buffer, filename: "documento.pdf" };
     };
 
-    const viaDownload = async (): Promise<Download | null> => {
-      const d = await page.waitForEvent("download", { timeout: timeoutMs }).catch(() => null);
-      if (!d) return null;
-      const filename = d.suggestedFilename();
-      const stream = await d.createReadStream();
-      const chunks: Buffer[] = [];
-      for await (const c of stream) chunks.push(c as Buffer);
-      const buffer = Buffer.concat(chunks);
-      log.info({ via: "download", filename, bytes: buffer.length }, "download captured");
-      return { buffer, filename };
-    };
+    // (a) A real `download` event on the CURRENT page OR on any popup the trigger
+    // opens. The SAT CSF button does window.open(...) and the PDF arrives as an
+    // attachment on that NEW tab, so the download event fires on the POPUP, not on
+    // `page` — listening only on `page` (the old code) missed it and we timed out
+    // while the browser quietly saved the PDF. Hook every existing + future page.
+    const viaDownload = new Promise<Download | null>((resolve) => {
+      let settled = false;
+      const finish = (d: Download | null) => {
+        if (settled) return;
+        settled = true;
+        ctx.off("page", hookPage);
+        resolve(d);
+      };
+      const onDownload = (via: string) => (d: PwDownload) =>
+        readDownloadEvent(d, via).then(finish, () => void 0);
+      const hookPage = (p: Page) => p.on("download", onDownload("download:popup"));
+      page.on("download", onDownload("download:page"));
+      ctx.on("page", hookPage);
+      setTimeout(() => finish(null), timeoutMs);
+    });
 
+    // A popup that renders the PDF INLINE (viewer, no attachment) — fetch its URL
+    // with the session cookies. (The attachment case is handled by viaDownload above.)
     const viaPopup = async (): Promise<Download | null> => {
       const p = await page.waitForEvent("popup", { timeout: timeoutMs }).catch(() => null);
       if (!p) return null;
@@ -195,7 +216,7 @@ export class PlaywrightSession implements Session {
     };
 
     await trigger();
-    const result = await firstTruthy([viaDownload(), viaPopup(), viaInlineNav()], timeoutMs + 1000);
+    const result = await firstTruthy([viaDownload, viaPopup(), viaInlineNav()], timeoutMs + 1000);
     if (result) return result;
 
     log.error("no download/popup/inline PDF after trigger (timed out)");
