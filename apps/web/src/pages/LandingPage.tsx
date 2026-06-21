@@ -1,10 +1,11 @@
-import { useScroll, useTransform, motion, useReducedMotion } from 'motion/react';
-import { useRef } from 'react';
+import { useScroll, useTransform, motion, useReducedMotion, AnimatePresence } from 'motion/react';
+import { useRef, useState } from 'react';
 import owlLogo from '../assets/owl-logo.png';
 import {
   FileSearch, Calculator, ShieldAlert, Mic,
-  Lock, ArrowRight, ChevronRight, Zap, Phone
+  Lock, ArrowRight, ChevronRight, Zap, Phone, CheckCircle, Loader
 } from 'lucide-react';
+import api from '../lib/api';
 import HeroOrb from '../components/HeroOrb';
 import { isAuthenticated } from '../lib/auth';
 import type { Page } from '../types';
@@ -71,12 +72,32 @@ const accentMap = {
   },
 };
 
+type CallState = 'idle' | 'loading' | 'success' | 'error';
+
 export default function LandingPage({ onNavigate }: LandingPageProps) {
   const loggedIn = isAuthenticated();
   const prefersReducedMotion = useReducedMotion();
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollY } = useScroll();
   const navShadow = useTransform(scrollY, [0, 60], [0, 1]);
+
+  const [phone, setPhone] = useState('');
+  const [callState, setCallState] = useState<CallState>('idle');
+  const [callError, setCallError] = useState('');
+
+  async function requestCall() {
+    if (!phone.trim()) return;
+    setCallState('loading');
+    setCallError('');
+    try {
+      await api.post('/public/call/request', { phoneNumber: phone.trim() });
+      setCallState('success');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'No se pudo iniciar la llamada.';
+      setCallError(msg);
+      setCallState('error');
+    }
+  }
 
   return (
     <div className="min-h-screen bg-bg text-ink flex flex-col overflow-x-hidden">
@@ -352,7 +373,6 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             {/* Phone icon */}
             <div className="relative inline-flex w-14 h-14 rounded-2xl bg-emerald-lo border border-emerald/20 items-center justify-center mb-6">
               <Phone size={22} className="text-emerald" />
-              {/* Pulse ring */}
               <span className="absolute inset-0 rounded-2xl border border-emerald/30 animate-ping opacity-40" aria-hidden="true" />
             </div>
 
@@ -361,33 +381,90 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               className="relative text-2xl md:text-3xl font-semibold tracking-[-0.02em] mb-3"
               style={{ textWrap: 'balance' } as React.CSSProperties}
             >
-              Prueba SATI ahora mismo
+              Prueba SATI en tu teléfono
             </h2>
             <p className="relative text-muted text-sm mb-8 max-w-[46ch] mx-auto" style={{ textWrap: 'pretty' } as React.CSSProperties}>
-              Llama a este número y habla con SATI en voz real. Pregúntale sobre impuestos, regímenes fiscales o el SAT. Sin registro, sin apps.
+              Escribe tu número y te llamamos ahora. Habla con SATI en voz real — sin registro, sin apps.
             </p>
 
-            {/* Phone number */}
-            <div className="relative inline-flex items-center gap-3 px-6 py-3.5 rounded-2xl bg-bg border border-border mb-8">
-              <Phone size={16} className="text-emerald shrink-0" aria-hidden="true" />
-              <span className="text-xl font-semibold tracking-wide text-ink">+1 (434) 922-9195</span>
-            </div>
+            <AnimatePresence mode="wait">
+              {callState === 'success' ? (
+                <motion.div
+                  key="success"
+                  initial={{ opacity: 0, scale: 0.92 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                  className="relative flex flex-col items-center gap-3"
+                >
+                  <div className="w-12 h-12 rounded-full bg-emerald-lo border border-emerald/30 flex items-center justify-center mb-1">
+                    <CheckCircle size={22} className="text-emerald" />
+                  </div>
+                  <p className="text-ink font-semibold">¡Llamada en camino!</p>
+                  <p className="text-sm text-muted max-w-[38ch]">
+                    Recibirás la llamada en unos segundos.{' '}
+                    <span className="text-ink font-medium">Al contestar, presiona cualquier tecla</span>{' '}
+                    para conectar con SATI.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => { setCallState('idle'); setPhone(''); }}
+                    className="mt-2 text-xs text-muted underline underline-offset-2 hover:text-ink transition-colors"
+                  >
+                    Solicitar otra llamada
+                  </button>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="form"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="relative flex flex-col items-center gap-4 w-full max-w-sm mx-auto"
+                >
+                  <div className="flex w-full rounded-xl overflow-hidden border border-border bg-bg focus-within:border-emerald/50 transition-colors duration-150">
+                    <span className="flex items-center pl-4 text-muted shrink-0 text-sm select-none">
+                      <Phone size={14} className="mr-1.5" aria-hidden="true" />+
+                    </span>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => { setPhone(e.target.value); setCallState('idle'); }}
+                      onKeyDown={(e) => e.key === 'Enter' && requestCall()}
+                      placeholder="52 55 1234 5678"
+                      className="flex-1 bg-transparent py-3 pr-4 text-sm text-ink placeholder:text-subtle outline-none"
+                      disabled={callState === 'loading'}
+                      aria-label="Tu número de teléfono"
+                    />
+                  </div>
 
-            {/* Call button */}
-            <div className="relative">
-              <motion.a
-                href="tel:+14349229195"
-                className="btn-shine inline-flex items-center gap-2 h-11 px-8 rounded-full bg-emerald text-bg font-semibold text-sm"
-                whileHover={{ scale: 1.04, boxShadow: '0 0 32px oklch(0.72 0.17 162 / 0.50)' }}
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              >
-                <Phone size={15} aria-hidden="true" />
-                Llamar ahora
-              </motion.a>
-            </div>
+                  {callState === 'error' && (
+                    <p className="text-xs text-red-400 -mt-2">{callError}</p>
+                  )}
 
-            <p className="relative mt-5 text-xs text-subtle">
+                  <motion.button
+                    type="button"
+                    onClick={requestCall}
+                    disabled={callState === 'loading' || !phone.trim()}
+                    className="btn-shine w-full h-11 rounded-full bg-emerald text-bg font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    whileHover={callState !== 'loading' ? { scale: 1.02, boxShadow: '0 0 28px oklch(0.72 0.17 162 / 0.45)' } : {}}
+                    whileTap={callState !== 'loading' ? { scale: 0.97 } : {}}
+                    transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                  >
+                    {callState === 'loading'
+                      ? <><Loader size={15} className="animate-spin" aria-hidden="true" /> Iniciando llamada…</>
+                      : <><Phone size={15} aria-hidden="true" /> Llamarme ahora</>
+                    }
+                  </motion.button>
+
+                  <p className="text-xs text-subtle">
+                    Al contestar, <span className="text-muted">presiona cualquier tecla</span> para conectar con SATI
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <p className="relative mt-6 text-xs text-subtle">
               Demo pública · Sin acceso a tus datos reales del SAT
             </p>
           </motion.div>

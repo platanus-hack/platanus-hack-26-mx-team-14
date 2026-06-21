@@ -12,6 +12,7 @@ import { authRoutes } from "./routes/auth.js";
 import { publicVoiceRoutes } from "./routes/publicVoice.js";
 import { publicLlmRoutes } from "./routes/publicLlm.js";
 import { publicLlmAuthRoutes } from "./routes/publicLlmAuth.js";
+import { publicCallRoutes } from "./routes/publicCall.js";
 import { mockRoutes } from "./routes/mock.js";
 import { privacyRoutes } from "./routes/privacy.js";
 import { insightsRoutes } from "./routes/insights.js";
@@ -52,6 +53,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(publicVoiceRoutes);
   await app.register(publicLlmRoutes);
   await app.register(publicLlmAuthRoutes);
+  await app.register(publicCallRoutes);
   await app.register(skillsRoutes);
   await app.register(streamRoutes);
   await app.register(voiceRoutes);
