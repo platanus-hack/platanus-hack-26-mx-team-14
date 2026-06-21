@@ -1,9 +1,8 @@
 import { useState, type SyntheticEvent } from 'react';
 import owlLogo from '../assets/owl-logo.png';
-import { Eye, EyeOff, ArrowLeft, ArrowRight, Lock, Mail, User, ShieldCheck, FileSearch, Calculator, KeyRound } from 'lucide-react';
+import { Eye, EyeOff, ArrowLeft, ArrowRight, Lock, Mail, User, ShieldCheck, FileSearch, Calculator } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import PasswordStrength from '../components/PasswordStrength';
-import FileDropzone from '../components/FileDropzone';
 import Orb from '../components/Orb';
 import api from '../lib/api';
 import { setToken, setUser } from '../lib/auth';
@@ -13,8 +12,6 @@ interface AuthPageProps {
   onNavigate: (page: Page) => void;
   onLogin: () => void;
 }
-
-type SatMethod = 'ciec' | 'efirma';
 
 interface SignupData {
   name: string;
@@ -47,12 +44,6 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
   const [showCiecPassword, setShowCiecPassword] = useState(false);
   const [signupError, setSignupError] = useState('');
 
-  const [satMethod, setSatMethod] = useState<SatMethod>('ciec');
-  const [cerFile, setCerFile] = useState<File | null>(null);
-  const [keyFile, setKeyFile] = useState<File | null>(null);
-  const [keyPassword, setKeyPassword] = useState('');
-  const [showKeyPassword, setShowKeyPassword] = useState(false);
-
   async function handleLogin(e: SyntheticEvent) {
     e.preventDefault();
     if (!loginEmail || !loginPwd) {
@@ -67,9 +58,8 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
       setUser(data.user);
       onLogin();
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string; message?: string } }; message?: string };
-      const msg = axiosErr?.response?.data?.error ?? axiosErr?.response?.data?.message ?? axiosErr?.message;
-      setLoginError(msg || 'Error al iniciar sesión. Intenta de nuevo.');
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setLoginError(msg ?? 'Error al iniciar sesión. Intenta de nuevo.');
     } finally {
       setLoading(false);
     }
@@ -87,30 +77,6 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
     setLoading(true);
     setSignupError('');
     try {
-      if (satMethod === 'efirma') {
-        // 1) Create the account (no SAT credential yet).
-        const { data } = await api.post('/auth/register', {
-          name: signup.name,
-          email: signup.email,
-          password: signup.password,
-        });
-        setToken(data.token);
-        setUser(data.user);
-
-        // 2) Upload the e.firma cert + key (multipart) with the fresh token.
-        const form = new FormData();
-        form.append('rfc', signup.rfc);
-        form.append('keyPassword', keyPassword);
-        form.append('cer', cerFile as File);
-        form.append('key', keyFile as File);
-        await api.post('/credentials/efirma', form, {
-          headers: { 'Content-Type': undefined },
-        });
-
-        onLogin();
-        return;
-      }
-
       const { data } = await api.post('/auth/register', {
         name: signup.name,
         email: signup.email,
@@ -122,9 +88,8 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
       setUser(data.user);
       onLogin();
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string; message?: string } }; message?: string };
-      const msg = axiosErr?.response?.data?.error ?? axiosErr?.response?.data?.message ?? axiosErr?.message;
-      setSignupError(msg || 'Error al crear la cuenta. Intenta de nuevo.');
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setSignupError(msg ?? 'Error al crear la cuenta. Intenta de nuevo.');
     } finally {
       setLoading(false);
     }
@@ -137,10 +102,6 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
   const rfcError = signup.rfc && signup.rfc.length > 0 && signup.rfc.length < 12
     ? 'El RFC debe tener 12 o 13 caracteres'
     : '';
-
-  const efirmaIncomplete =
-    satMethod === 'efirma' &&
-    (signup.rfc.length < 12 || !cerFile || !keyFile || !keyPassword);
 
   return (
     <div className="min-h-screen bg-bg flex overflow-hidden">
@@ -523,29 +484,6 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                           </motion.div>
                         )}
 
-                        <div
-                          className="flex p-1 bg-surface rounded-xl border border-border"
-                          role="tablist"
-                          aria-label="Método de conexión al SAT"
-                        >
-                          {(['ciec', 'efirma'] as SatMethod[]).map((m) => (
-                            <button
-                              key={m}
-                              type="button"
-                              role="tab"
-                              aria-selected={satMethod === m}
-                              onClick={() => { setSatMethod(m); setSignupError(''); }}
-                              className={`flex-1 h-9 rounded-lg text-sm font-medium transition-all duration-200 ${
-                                satMethod === m
-                                  ? 'bg-bg text-ink border border-border shadow-sm'
-                                  : 'text-muted hover:text-ink'
-                              }`}
-                            >
-                              {m === 'ciec' ? 'Contraseña CIEC' : 'e.firma (FIEL)'}
-                            </button>
-                          ))}
-                        </div>
-
                         <div>
                           <label htmlFor="signup-rfc" className="block text-xs text-muted mb-1.5 font-medium uppercase tracking-wide">
                             RFC
@@ -570,83 +508,35 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                           )}
                         </div>
 
-                        {satMethod === 'ciec' ? (
-                          <div>
-                            <label htmlFor="signup-ciec" className="block text-xs text-muted mb-1.5 font-medium uppercase tracking-wide">
-                              Contraseña CIEC
-                            </label>
-                            <div className="relative">
-                              <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-subtle pointer-events-none" aria-hidden="true" />
-                              <input
-                                id="signup-ciec"
-                                type={showCiecPassword ? 'text' : 'password'}
-                                autoComplete="off"
-                                value={signup.ciecPassword}
-                                onChange={e => setField('ciecPassword', e.target.value)}
-                                placeholder="Tu contraseña del SAT"
-                                className="input-field w-full h-11 pl-10 pr-10 rounded-xl bg-surface border border-border text-sm text-ink placeholder:text-subtle focus:outline-none focus:border-emerald/60 transition-colors"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setShowCiecPassword(v => !v)}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-subtle hover:text-muted transition-colors"
-                                aria-label={showCiecPassword ? 'Ocultar contraseña CIEC' : 'Mostrar contraseña CIEC'}
-                              >
-                                {showCiecPassword ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
-                              </button>
-                            </div>
-                            <p className="text-xs text-subtle mt-1.5 flex items-center gap-1">
-                              <ShieldCheck size={11} className="text-emerald shrink-0" />
-                              Cifrada en tu dispositivo antes de enviarse
-                            </p>
+                        <div>
+                          <label htmlFor="signup-ciec" className="block text-xs text-muted mb-1.5 font-medium uppercase tracking-wide">
+                            Contraseña CIEC
+                          </label>
+                          <div className="relative">
+                            <Lock size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-subtle pointer-events-none" aria-hidden="true" />
+                            <input
+                              id="signup-ciec"
+                              type={showCiecPassword ? 'text' : 'password'}
+                              autoComplete="off"
+                              value={signup.ciecPassword}
+                              onChange={e => setField('ciecPassword', e.target.value)}
+                              placeholder="Tu contraseña del SAT"
+                              className="input-field w-full h-11 pl-10 pr-10 rounded-xl bg-surface border border-border text-sm text-ink placeholder:text-subtle focus:outline-none focus:border-emerald/60 transition-colors"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowCiecPassword(v => !v)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-subtle hover:text-muted transition-colors"
+                              aria-label={showCiecPassword ? 'Ocultar contraseña CIEC' : 'Mostrar contraseña CIEC'}
+                            >
+                              {showCiecPassword ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
+                            </button>
                           </div>
-                        ) : (
-                          <>
-                            <FileDropzone
-                              id="efirma-cer"
-                              label="Certificado (.cer)"
-                              accept=".cer"
-                              extension=".cer"
-                              onFile={setCerFile}
-                            />
-                            <FileDropzone
-                              id="efirma-key"
-                              label="Llave privada (.key)"
-                              accept=".key"
-                              extension=".key"
-                              onFile={setKeyFile}
-                            />
-                            <div>
-                              <label htmlFor="signup-keypwd" className="block text-xs text-muted mb-1.5 font-medium uppercase tracking-wide">
-                                Contraseña de la llave
-                              </label>
-                              <div className="relative">
-                                <KeyRound size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-subtle pointer-events-none" aria-hidden="true" />
-                                <input
-                                  id="signup-keypwd"
-                                  type={showKeyPassword ? 'text' : 'password'}
-                                  autoComplete="off"
-                                  value={keyPassword}
-                                  onChange={e => setKeyPassword(e.target.value)}
-                                  placeholder="Contraseña de tu llave privada"
-                                  className="input-field w-full h-11 pl-10 pr-10 rounded-xl bg-surface border border-border text-sm text-ink placeholder:text-subtle focus:outline-none focus:border-emerald/60 transition-colors"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => setShowKeyPassword(v => !v)}
-                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-subtle hover:text-muted transition-colors"
-                                  aria-label={showKeyPassword ? 'Ocultar contraseña de la llave' : 'Mostrar contraseña de la llave'}
-                                >
-                                  {showKeyPassword ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
-                                </button>
-                              </div>
-                              <p className="text-xs text-subtle mt-1.5 flex items-center gap-1">
-                                <ShieldCheck size={11} className="text-emerald shrink-0" />
-                                Tu certificado y llave se cifran con AES-256
-                              </p>
-                            </div>
-                          </>
-                        )}
+                          <p className="text-xs text-subtle mt-1.5 flex items-center gap-1">
+                            <ShieldCheck size={11} className="text-emerald shrink-0" />
+                            Cifrada en tu dispositivo antes de enviarse
+                          </p>
+                        </div>
 
                         <div className="flex gap-3 mt-1">
                           <button
@@ -658,7 +548,7 @@ export default function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                           </button>
                           <motion.button
                             type="submit"
-                            disabled={loading || !!rfcError || efirmaIncomplete}
+                            disabled={loading || !!rfcError}
                             className="flex-1 h-11 rounded-full bg-emerald text-bg font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                             whileHover={{ opacity: 0.92, scale: 1.01 }}
                             whileTap={{ scale: 0.97 }}
