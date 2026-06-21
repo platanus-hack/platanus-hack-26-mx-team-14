@@ -7,6 +7,7 @@ import {
   integer,
   customType,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 /** pgvector column type (dimensions match the embedding model, Voyage voyage-3 = 1024). */
@@ -88,15 +89,48 @@ export const documents = pgTable(
       ],
     }).notNull(),
     sourceEventId: uuid("source_event_id"),
+    /**
+     * Stable, source-derived id so the *same* fiscal record (an invoice UUID, a
+     * user's CSF) collapses to one row across sessions instead of piling up on
+     * every re-scrape. Upserts key on (userId, naturalKey). Null = not deduped.
+     */
+    naturalKey: text("natural_key"),
     title: text("title").notNull(),
     body: text("body").notNull(), // normalized, embedding-friendly text
     metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull(),
     embedding: vector("embedding", 1024),
     artifactId: uuid("artifact_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    /** Right-to-erasure / retention. Non-null rows are excluded from all retrieval. */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (t) => ({
     byScope: index("documents_scope_idx").on(t.userId, t.rfc, t.type, t.createdAt),
+    // Upsert target: one row per (user, fiscal record). Postgres treats NULL
+    // naturalKey as distinct, so non-deduped docs never collide here.
+    byNaturalKey: uniqueIndex("documents_user_natural_key_idx").on(t.userId, t.naturalKey),
+  }),
+);
+
+/**
+ * Append-only log of natural-language queries users ask the agent. Powers the
+ * dashboard's "top queries" suggestions (recency-weighted frequency per user).
+ * Scoped per user; never read across tenants.
+ */
+export const queryLog = pgTable(
+  "query_log",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").notNull(),
+    rfc: text("rfc"),
+    text: text("text").notNull(),
+    /** Optional resolved intent/tool, if we can map it (best-effort). */
+    intent: text("intent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    byUser: index("query_log_user_idx").on(t.userId, t.createdAt),
   }),
 );
 

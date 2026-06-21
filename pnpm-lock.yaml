@@ -47,6 +47,9 @@ importers:
       '@sat/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@sat/rag':
+        specifier: workspace:*
+        version: link:../../packages/rag
       '@sat/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -169,6 +172,9 @@ importers:
       '@sat/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@sat/rag':
+        specifier: workspace:*
+        version: link:../../packages/rag
       '@sat/scraper':
         specifier: workspace:*
         version: link:../../packages/scraper
@@ -248,6 +254,9 @@ importers:
 
   packages/rag:
     dependencies:
+      '@sat/db':
+        specifier: workspace:*
+        version: link:../db
       '@sat/events':
         specifier: workspace:*
         version: link:../events
