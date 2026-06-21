@@ -1,12 +1,34 @@
 import { Queue, QueueEvents } from "bullmq";
 import IORedis from "ioredis";
-import { env } from "@sat/shared";
-import { QUEUES, type ScrapeJob, type SkillResult } from "@sat/events";
+import { env, logger } from "@sat/shared";
+import { QUEUES, type ScrapeJob, type SkillResult, type EmbedJob } from "@sat/events";
 
 export const connection = new IORedis({ ...env.redis, maxRetriesPerRequest: null });
 
 export const scrapeQueue = new Queue<ScrapeJob, SkillResult>(QUEUES.scrape, { connection });
 const scrapeEvents = new QueueEvents(QUEUES.scrape, { connection });
+
+export const embedQueue = new Queue<EmbedJob>(QUEUES.embed, { connection });
+
+/**
+ * Fire-and-forget enqueue of RAG memory writes. NEVER awaited on the user-facing
+ * turn — embedding/persistence happens off the critical path, and a failure here
+ * must never surface to the user mid-conversation (it just means a slightly colder
+ * cache next time). Errors are logged, swallowed, and retried by BullMQ.
+ */
+export async function enqueueEmbed(job: EmbedJob): Promise<void> {
+  if (job.docs.length === 0) return;
+  try {
+    await embedQueue.add("embed", job, {
+      attempts: 3,
+      backoff: { type: "exponential", delay: 1000 },
+      removeOnComplete: 500,
+      removeOnFail: 200,
+    });
+  } catch (err) {
+    logger.warn({ err, userId: job.userId, docs: job.docs.length }, "enqueueEmbed failed (non-fatal)");
+  }
+}
 
 export async function runSkillViaQueue(
   job: ScrapeJob,

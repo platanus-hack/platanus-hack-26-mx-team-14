@@ -17,6 +17,7 @@
     "@sat/agent": "workspace:*",
     "@sat/db": "workspace:*",
     "@sat/events": "workspace:*",
+    "@sat/rag": "workspace:*",
     "@sat/shared": "workspace:*",
     "@sat/voice": "workspace:*",
     "bullmq": "^5.28.1",

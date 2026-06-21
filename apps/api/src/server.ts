@@ -13,6 +13,8 @@ import { publicVoiceRoutes } from "./routes/publicVoice.js";
 import { publicLlmRoutes } from "./routes/publicLlm.js";
 import { publicLlmAuthRoutes } from "./routes/publicLlmAuth.js";
 import { mockRoutes } from "./routes/mock.js";
+import { privacyRoutes } from "./routes/privacy.js";
+import { insightsRoutes } from "./routes/insights.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -56,6 +58,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await app.register(agentRoutes);
   await app.register(agentVoiceRoutes);
   await app.register(mockRoutes);
+  await app.register(privacyRoutes);
+  await app.register(insightsRoutes);
 
   return app;
 }

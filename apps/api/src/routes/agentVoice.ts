@@ -13,6 +13,7 @@ import {
 import { type ScrapeJob, type SkillName, type SkillResult } from "@sat/events";
 import { runSkillViaQueue } from "../queue.js";
 import { extractTicket } from "@sat/scraper";
+import { persistToolResult, runSearchHistory, runTopCounterparties, logUserQuery } from "../ragMemory.js";
 
 const TOOL_LABELS: Record<string, string> = {
   getEmitedInvoices: "Consultando facturas emitidas…",
@@ -133,9 +134,12 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
         "agent turn started",
       );
 
+      // Log the user's NL query for the top-queries suggestions.
+      logUserQuery({ userId: userId ?? "", rfc: rfc ?? "" }, userText, req.log);
+
       // Detailed logging for first image (debug why extraction might fail)
-      if (imageCount > 0) {
-        const firstImageMsg = imageMessages[0]!;
+      const firstImageMsg = imageMessages[0];
+      if (firstImageMsg) {
         const imageBlocks = Array.isArray(firstImageMsg.content)
           ? firstImageMsg.content.filter((b) => b.type === "image")
           : [];
@@ -191,6 +195,33 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
 
           const correlationId = uuid();
 
+          // RAG / KG-lite reads: answered inline from this user's data — no SAT, no queue.
+          if (block.name === "searchHistory" || block.name === "getTopCounterparties") {
+            const scope = { userId: userId ?? "", rfc: rfc ?? "" };
+            const input = block.input as Record<string, unknown>;
+            try {
+              const out =
+                block.name === "searchHistory"
+                  ? await runSearchHistory(scope, input, req.log)
+                  : await runTopCounterparties(scope, input, req.log);
+              send({ type: "tool_result", skill: block.name, result: out });
+              toolResults.push({
+                type: "tool_result",
+                tool_use_id: block.id,
+                content: JSON.stringify(out),
+              });
+            } catch (err) {
+              send({ type: "tool_result", skill: block.name, error: (err as Error).message });
+              toolResults.push({
+                type: "tool_result",
+                tool_use_id: block.id,
+                content: `Error: ${(err as Error).message}`,
+                is_error: true,
+              });
+            }
+            continue;
+          }
+
           try {
             let result: SkillResult;
 
@@ -214,6 +245,8 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
             }
 
             lastSkillResult = result;
+            // Write path: persist the result into RAG memory (fire-and-forget).
+            persistToolResult({ userId: userId ?? "", rfc: rfc ?? "" }, result, req.log);
             send({ type: "tool_result", skill: block.name, result });
             toolResults.push({
               type: "tool_result",

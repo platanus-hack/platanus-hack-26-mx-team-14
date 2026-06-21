@@ -10,8 +10,15 @@ import {
   isOverloaded,
   createMessageResilient,
 } from "@sat/agent";
-import { type ScrapeJob, type SkillName } from "@sat/events";
+import { type ScrapeJob, type SkillName, type SkillResult } from "@sat/events";
 import { runSkillViaQueue } from "../queue.js";
+import {
+  persistToolResult,
+  runSearchHistory,
+  runTopCounterparties,
+  logUserQuery,
+  lastUserText,
+} from "../ragMemory.js";
 
 export async function agentRoutes(app: FastifyInstance) {
   // Client tuned for outages: SDK retries 429/500/529 with backoff (maxRetries: 5).
@@ -27,6 +34,9 @@ export async function agentRoutes(app: FastifyInstance) {
     const messages = [...(b.messages ?? [])];
     const turnLog = req.log.child({ userId, rfc, op: "agent.turn" });
     turnLog.info({ inboundMessages: messages.length }, "agent turn started");
+
+    // Log the user's NL query (last user turn) for the top-queries suggestions.
+    logUserQuery({ userId: userId ?? "", rfc: rfc ?? "" }, lastUserText(messages), turnLog);
     try {
       for (let i = 0; i < 6; i++) {
         // Resilient call: retries (SDK) → fallback to Sonnet on overload (helper).
@@ -69,6 +79,32 @@ export async function agentRoutes(app: FastifyInstance) {
           // Log the tool call (input keys only — never the values, which may carry PII).
           const toolLog = turnLog.child({ tool: block.name, correlationId, op: "agent.tool" });
           toolLog.info({ inputKeys: Object.keys((block.input as object) ?? {}) }, "tool call started");
+
+          // RAG / KG-lite reads: answered inline from this user's data — no SAT, no queue.
+          if (block.name === "searchHistory" || block.name === "getTopCounterparties") {
+            const scope = { userId: userId ?? "", rfc: rfc ?? "" };
+            const input = block.input as Record<string, unknown>;
+            try {
+              const out =
+                block.name === "searchHistory"
+                  ? await runSearchHistory(scope, input, toolLog)
+                  : await runTopCounterparties(scope, input, toolLog);
+              toolResults.push({
+                type: "tool_result",
+                tool_use_id: block.id,
+                content: JSON.stringify(out),
+              });
+            } catch (err) {
+              toolResults.push({
+                type: "tool_result",
+                tool_use_id: block.id,
+                content: `Error: ${(err as Error).message}`,
+                is_error: true,
+              });
+            }
+            continue;
+          }
+
           const job: ScrapeJob = {
             skill: block.name as SkillName,
             correlationId,
@@ -82,6 +118,8 @@ export async function agentRoutes(app: FastifyInstance) {
           try {
             const result = await runSkillViaQueue(job);
             toolLog.info({ ms: Date.now() - tTool, ok: true }, "tool call finished");
+            // Write path: persist the result into RAG memory (fire-and-forget).
+            persistToolResult({ userId: userId ?? "", rfc: rfc ?? "" }, result as SkillResult, toolLog);
             toolResults.push({
               type: "tool_result",
               tool_use_id: block.id,
