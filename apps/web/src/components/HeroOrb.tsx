@@ -242,8 +242,6 @@ export default function HeroOrb() {
 
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
-  useEffect(() => () => { doEndSession(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   // ── audio control ──────────────────────────────────────────────────────────
   function stopAudio() {
     abortRef.current?.abort();
@@ -379,6 +377,10 @@ export default function HeroOrb() {
     setS('idle');
     setError('');
   }
+
+  // Tear down the session on unmount. Declared after doEndSession so the linter
+  // doesn't flag use-before-declaration.
+  useEffect(() => () => { doEndSession(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function doStartSession() {
     setError('');

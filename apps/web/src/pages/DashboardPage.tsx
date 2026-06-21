@@ -6,6 +6,7 @@ import owlLogo from '../assets/owl-logo.png';
 import DashboardCanvas from '../components/DashboardCanvas';
 import { runSkill, detectSkill, replyFor } from '../data/skills';
 import { resultToPanels, type Panel } from '../lib/dashboard';
+import { useVoiceAgent } from '../lib/useVoiceAgent';
 import type { OrbState, Page } from '../types';
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -49,7 +50,6 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
   const [inputText, setInputText] = useState('');
   const [displayText, setDisplayText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [micActive, setMicActive] = useState(false);
   const [panels, setPanels] = useState<Panel[]>([]);
   const typewriterRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -70,6 +70,16 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
     tick();
   }, []);
 
+  // Voice front-door: same canvas as text. The agent transcribes, runs a skill
+  // (→ panel) and narrates (→ reply line + spoken audio). See useVoiceAgent.
+  const voice = useVoiceAgent({
+    onStatus: setOrbState,
+    onTranscript: () => { if (typewriterRef.current) clearTimeout(typewriterRef.current); setDisplayText(''); },
+    onReply: (text) => typeText(text),
+    onSkill: (result) => setPanels((prev) => [...prev, ...resultToPanels(result)]),
+    onError: (msg) => { setOrbState('idle'); typeText(msg); },
+  });
+
   const runQuery = useCallback((query: string) => {
     if (isProcessing) return;
     setIsProcessing(true);
@@ -84,7 +94,6 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
       setTimeout(() => {
         setOrbState('idle');
         setIsProcessing(false);
-        setMicActive(false);
       }, reply.length * 24 + 1200);
     };
 
@@ -112,9 +121,8 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
 
   function handleMic() {
     if (isProcessing) return;
-    setMicActive((v) => !v);
     setInputText('');
-    runQuery('genera mi constancia de situación fiscal');
+    voice.toggle();
   }
 
   function removePanel(id: string) {
@@ -136,16 +144,16 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
       <motion.button
         type="button"
         onClick={handleMic}
-        disabled={isProcessing && !micActive}
-        aria-label={micActive ? 'Detener micrófono' : 'Activar micrófono'}
-        aria-pressed={micActive}
+        disabled={isProcessing || voice.busy}
+        aria-label={voice.recording ? 'Detener micrófono' : 'Activar micrófono'}
+        aria-pressed={voice.recording}
         className={`shrink-0 rounded-full flex items-center justify-center transition-colors ${
           compact ? 'w-8 h-8' : 'w-10 h-10'
-        } ${micActive ? 'bg-emerald text-bg' : 'bg-surface-hi text-muted hover:text-ink hover:bg-border'}`}
+        } ${voice.recording ? 'bg-emerald text-bg' : 'bg-surface-hi text-muted hover:text-ink hover:bg-border'} disabled:opacity-40`}
         whileTap={{ scale: 0.9 }}
         transition={{ duration: 0.12 }}
       >
-        {micActive ? <MicOff size={compact ? 15 : 18} aria-hidden="true" /> : <Mic size={compact ? 15 : 18} aria-hidden="true" />}
+        {voice.recording ? <MicOff size={compact ? 15 : 18} aria-hidden="true" /> : <Mic size={compact ? 15 : 18} aria-hidden="true" />}
       </motion.button>
       <input
         type="text"

@@ -39,9 +39,13 @@ function OwlScene({ state }: { state: OrbState }) {
 
   const { mouse, camera } = useThree();
 
-  const owlTex = useTexture(owlImg);
-  owlTex.colorSpace  = THREE.SRGBColorSpace;
-  owlTex.needsUpdate = true;
+  // Configure the texture inside useTexture's onLoad callback — mutating the
+  // hook's return value directly is disallowed by react-hooks/immutability.
+  const owlTex = useTexture(owlImg, (tex) => {
+    const t = Array.isArray(tex) ? tex[0] : tex;
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.needsUpdate = true;
+  });
 
   const alphaMask = useCircleAlpha();
   const colorObj  = useMemo(() => new THREE.Color(STATE_COLOR[state]), [state]);
