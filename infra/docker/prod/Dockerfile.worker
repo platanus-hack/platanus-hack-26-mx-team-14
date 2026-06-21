@@ -22,4 +22,9 @@ RUN pnpm --filter @sat/scraper rebuild sharp 2>/dev/null || true
 # Compile TypeScript → JS bundle (no tsx overhead at runtime, ~100MB saved)
 RUN pnpm --filter @sat/worker build
 
-CMD ["node", "/app/apps/worker/dist/index.js"]
+# Run a virtual X display (Xvfb) so Chromium can run NON-headless (SAT_HEADFUL=1) —
+# a headless browser gets logged out on the CSF download click; headful matches local.
+# We start Xvfb ourselves and `exec` the worker instead of using `xvfb-run`, which
+# hangs as PID 1 in Docker (starts Xvfb but never execs the command).
+ENV DISPLAY=:99
+CMD Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & exec node /app/apps/worker/dist/index.js
