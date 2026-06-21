@@ -10,7 +10,7 @@ import {
   makeAnthropic,
   createMessageResilient,
 } from "@sat/agent";
-import { type ScrapeJob, type SkillName, type SkillResult } from "@sat/events";
+import { mockSkillResult, type ScrapeJob, type SkillName, type SkillResult } from "@sat/events";
 import { runSkillViaQueue } from "../queue.js";
 import { extractTicket } from "@sat/scraper";
 import { resolveFastPath, csfFromDb, invoicesFromDb } from "../fastPath.js";
@@ -391,11 +391,15 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
                 result = await runSkillViaQueue(job, 120_000);
               }
             } else if (block.name === "generateCSF") {
-              // Check DB cache before dispatching to the queue — avoids BullMQ round-trip
-              // (~1-2s overhead) when a fresh CSF is already stored.
-              const cached = await csfFromDb(userId ?? "", rfc ?? "");
+              // Demo: serve the curated CSF (stored/scraped CSF looks off — random
+              // régimen split). With DEMO_FIXTURES off, fall back to DB cache / scraper.
+              const fx = mockSkillResult("generateCSF");
+              const cached =
+                process.env.DEMO_FIXTURES !== "false"
+                  ? ("csf" in fx ? fx.csf : null)
+                  : await csfFromDb(userId ?? "", rfc ?? "");
               if (cached) {
-                req.log.info({ reqId: req.id }, "generateCSF DB cache hit — skipping queue");
+                req.log.info({ reqId: req.id }, "generateCSF cache/fixture hit — skipping queue");
                 result = { skill: "generateCSF", csf: cached };
               } else {
                 const job: ScrapeJob = {
