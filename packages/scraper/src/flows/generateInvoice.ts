@@ -12,6 +12,32 @@ const RFC_GENERICO_NACIONAL = "XAXX010101000";
 const RFC_GENERICO_EXTRANJERO = "XEXX010101000";
 
 /**
+ * Dismiss any Bootstrap error modal that might be blocking pointer events.
+ * The SAT portal sometimes shows #modal-error with data-backdrop="static"
+ * which intercepts clicks on underlying buttons.
+ */
+async function dismissErrorModals(session: Session): Promise<void> {
+  const hasError = await session.exists(SEL.factura.errorModal).catch(() => false);
+  if (hasError) {
+    await session
+      .evaluate(
+        `(() => {
+          const modals = document.querySelectorAll('#modal-error.in, .modal.error.in');
+          modals.forEach(m => {
+            m.classList.remove('in');
+            m.style.display = 'none';
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) backdrop.remove();
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+          });
+        })()`,
+      )
+      .catch(() => {});
+  }
+}
+
+/**
  * c_UsoCFDI (CFDI 4.0). The "Uso de la Factura" control is a LOCAL autocomplete
  * (no server URL) that filters its options by the *description*, not the code — so
  * we type the description to select a Uso. Map the code → description here.
@@ -194,15 +220,18 @@ export async function generateInvoice(
     if (c.objetoImpuesto) await session.selectOption(SEL.factura.objetoImpuesto, c.objetoImpuesto);
     if (c.numeroIdentificacion)
       await session.fill(SEL.factura.numeroIdentificacion, c.numeroIdentificacion);
+    await dismissErrorModals(session);
     await session.click(SEL.factura.guardarConcepto);
     await session.waitForHidden(SEL.factura.loadingModal);
   }
 
   step(ctx, "Guardando borrador");
+  await dismissErrorModals(session);
   await session.click(SEL.factura.guardar);
   await session.waitForHidden(SEL.factura.loadingModal);
 
   step(ctx, "Generando vista previa");
+  await dismissErrorModals(session);
   const download = await session.captureDownload(async () => {
     await session.click(SEL.factura.vistaPrevia);
   });

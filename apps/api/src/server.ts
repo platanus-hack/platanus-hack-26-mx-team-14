@@ -15,6 +15,7 @@ import { mockRoutes } from "./routes/mock.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
+    bodyLimit: 5 * 1024 * 1024, // 5 MB — allows compressed ticket images
     logger: {
       level: env.LOG_LEVEL,
       redact: { paths: ["req.headers.authorization", "password", "*.password"], censor: "[redacted]" },
@@ -23,7 +24,15 @@ export async function buildServer(): Promise<FastifyInstance> {
         : {}),
     },
   });
-  await app.register(cors, { origin: env.WEB_ORIGIN, credentials: true });
+  await app.register(cors, {
+    origin: (origin, cb) => {
+      const allowed = (env.WEB_ORIGIN ?? "").replace(/\/+$/, "");
+      const incoming = (origin ?? "").replace(/\/+$/, "");
+      if (!incoming || incoming === allowed) cb(null, true);
+      else cb(new Error("CORS not allowed"), false);
+    },
+    credentials: true,
+  });
   await app.register(fastifyJwt, { secret: env.JWT_SECRET });
 
   app.decorate("authenticate", async (req: FastifyRequest, reply: FastifyReply) => {

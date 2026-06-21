@@ -3,9 +3,16 @@ import type { SkillResult } from '../types';
 
 export type VoiceStatus = 'idle' | 'ready' | 'speech' | 'processing' | 'playing';
 
+export interface ImageAttachment {
+  base64: string;
+  mediaType: string;
+  previewUrl: string;
+}
+
 export interface AgentMessage {
   role: 'user' | 'assistant';
   content: string;
+  image?: ImageAttachment;
 }
 
 export interface UseVoiceAgentReturn {
@@ -16,6 +23,9 @@ export interface UseVoiceAgentReturn {
   skillResult: SkillResult | null;
   error: string;
   sessionActive: boolean;
+  attachedImage: ImageAttachment | null;
+  attachImage: (file: File) => void;
+  detachImage: () => void;
   startSession: () => Promise<void>;
   endSession: () => void;
   sendText: (text: string) => Promise<void>;
@@ -189,6 +199,47 @@ async function* readSSE(res: Response) {
 const BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000') as string;
 const USE_MOCK = (import.meta.env.VITE_USE_MOCK_AGENT ?? '') === 'true';
 
+// ── Image compression ─────────────────────────────────────────────────────────
+function compressImage(
+  file: File,
+  maxDim = 2048,
+  quality = 0.92,
+): Promise<{ base64: string; mediaType: string; previewUrl: string }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const ratio = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) return reject(new Error('Canvas export failed'));
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = reader.result as string;
+            const base64 = dataUrl.split(',')[1];
+            URL.revokeObjectURL(img.src);
+            resolve({ base64, mediaType: 'image/jpeg', previewUrl: dataUrl });
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        },
+        'image/jpeg',
+        quality,
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(img.src); reject(new Error('Failed to load image')); };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 // ── Hook ──────────────────────────────────────────────────────────────────────
 export function useVoiceAgent(): UseVoiceAgentReturn {
   const [status, setStatus] = useState<VoiceStatus>('idle');
@@ -197,6 +248,7 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
   const [toolActivity, setToolActivity] = useState<string | null>(null);
   const [skillResult, setSkillResult] = useState<SkillResult | null>(null);
   const [error, setError] = useState('');
+  const [attachedImage, setAttachedImage] = useState<ImageAttachment | null>(null);
 
   const statusRef = useRef<VoiceStatus>('idle');
   const messagesRef = useRef<AgentMessage[]>([]);
@@ -255,15 +307,27 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
     await runAgentTurn({ audioBase64, mimeType: rec.mimeType });
   }, [setS]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function sendText(text: string) {
-    if (!text.trim() || statusRef.current === 'processing') return;
-    setMessages(prev => [...prev, { role: 'user', content: text }]);
-    setS('processing');
-    setToolActivity(null);
-    await runAgentTurn({ text });
+  function attachImage(file: File) {
+    if (!file.type.startsWith('image/')) return;
+    compressImage(file).then(setAttachedImage).catch(() => {});
   }
 
-  async function runAgentTurn(input: { audioBase64?: string; mimeType?: string; text?: string }) {
+  function detachImage() {
+    if (attachedImage) URL.revokeObjectURL(attachedImage.previewUrl);
+    setAttachedImage(null);
+  }
+
+  async function sendText(text: string) {
+    if ((!text.trim() && !attachedImage) || statusRef.current === 'processing') return;
+    const image = attachedImage;
+    setAttachedImage(null);
+    setMessages(prev => [...prev, { role: 'user', content: text || 'Analiza esta imagen', image: image ?? undefined }]);
+    setS('processing');
+    setToolActivity(null);
+    await runAgentTurn({ text: text || 'Analiza esta imagen', image });
+  }
+
+  async function runAgentTurn(input: { audioBase64?: string; mimeType?: string; text?: string; image?: ImageAttachment | null }) {
     const token = localStorage.getItem('sati_token');
     let player: AudioStreamPlayer | null = null;
     const fallbackChunks: string[] = [];
@@ -282,17 +346,30 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (!USE_MOCK && token) headers['Authorization'] = `Bearer ${token}`;
 
-    // Pass last 10 messages as context
-    const contextMessages = messagesRef.current.slice(-10).map(m => ({
-      role: m.role,
-      content: m.content,
-    }));
+    // Pass last 10 messages as context (images as multimodal content blocks)
+    const contextMessages = messagesRef.current.slice(-10).map(m => {
+      if (m.image && m.role === 'user') {
+        return {
+          role: m.role as const,
+          content: [
+            { type: 'image' as const, source: { type: 'base64' as const, media_type: m.image.mediaType, data: m.image.base64 } },
+            { type: 'text' as const, text: m.content },
+          ],
+        };
+      }
+      return { role: m.role as const, content: m.content };
+    });
+
+    const imageMsgCount = contextMessages.filter(m => Array.isArray(m.content) && m.content.some(b => b.type === 'image')).length;
+    console.log(`[useVoiceAgent] Sending ${contextMessages.length} messages, ${imageMsgCount} with images, text="${input.text?.slice(0, 50)}"`);
 
     try {
+      const body: Record<string, unknown> = { ...input, messages: USE_MOCK ? undefined : contextMessages, text: input.text };
+
       const res = await fetch(endpoint, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ ...input, messages: USE_MOCK ? undefined : contextMessages, text: input.text }),
+        body: JSON.stringify(body),
         signal: ctrl.signal,
       });
 
@@ -372,6 +449,7 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
     recorderRef.current?.stop(); recorderRef.current = null;
     streamRef.current?.getTracks().forEach(t => t.stop()); streamRef.current = null;
     stopAudio();
+    if (attachedImage) { URL.revokeObjectURL(attachedImage.previewUrl); setAttachedImage(null); }
     setS('idle');
     setError('');
     setToolActivity(null);
@@ -410,6 +488,9 @@ export function useVoiceAgent(): UseVoiceAgentReturn {
     skillResult,
     error,
     sessionActive: status !== 'idle',
+    attachedImage,
+    attachImage,
+    detachImage,
     startSession,
     endSession: doEndSession,
     sendText,

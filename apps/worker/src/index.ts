@@ -20,6 +20,7 @@ const worker = new Worker<ScrapeJob, SkillResult>(
     const startedAt = Date.now();
     const log = childLogger({ correlationId: data.correlationId, rfc: data.rfc, skill: data.skill });
     log.info({ jobId: job.id, attempt: job.attemptsMade + 1, driver: env.SAT_DRIVER }, "picked up scrape job");
+    log.info({ skill: data.skill, input: data.input }, "skill input payload");
 
     const credential = await loadCredential(data.credentialId);
 

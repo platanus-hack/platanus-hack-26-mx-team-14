@@ -12,12 +12,14 @@ import {
 } from "@sat/agent";
 import { type ScrapeJob, type SkillName, type SkillResult } from "@sat/events";
 import { runSkillViaQueue } from "../queue.js";
+import { extractTicket } from "@sat/scraper";
 
 const TOOL_LABELS: Record<string, string> = {
   getEmitedInvoices: "Consultando facturas emitidas…",
   getReceiptInvoices: "Consultando facturas recibidas…",
   generateCSF: "Descargando Constancia de Situación Fiscal…",
   generateInvoice: "Preparando factura…",
+  extractTicketData: "Extrayendo datos del ticket…",
 };
 
 export async function agentVoiceRoutes(app: FastifyInstance) {
@@ -106,10 +108,30 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
       // 2 — Agent agentic loop
       send({ type: "thinking" });
 
-      const messages: Anthropic.MessageParam[] = [
-        ...incomingMessages,
-        { role: "user", content: userText },
-      ];
+      // If the last incoming message already contains the user text (e.g. with an image),
+      // don't add a duplicate text-only message.
+      const lastIncoming = incomingMessages[incomingMessages.length - 1];
+      const lastContent = lastIncoming?.content;
+      const lastHasUserText =
+        Array.isArray(lastContent) &&
+        lastContent.some((b) => b.type === "text" && "text" in b && b.text === userText);
+      const lastHasImage =
+        Array.isArray(lastContent) && lastContent.some((b) => b.type === "image");
+
+      const messages: Anthropic.MessageParam[] = [...incomingMessages];
+      if (userText && !(lastHasUserText && lastHasImage)) {
+        messages.push({ role: "user", content: userText });
+      }
+
+      // Log message summary for debugging
+      const imageCount = messages.filter((m) => {
+        const c = m.content;
+        return Array.isArray(c) && c.some((b) => b.type === "image");
+      }).length;
+      req.log.info(
+        { totalMessages: messages.length, imageMessages: imageCount, userTextLength: userText.length },
+        "agent turn started",
+      );
 
       let lastSkillResult: SkillResult | null = null;
       let finalReply = "";
@@ -142,18 +164,29 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
           send({ type: "tool_call", name: block.name, label: TOOL_LABELS[block.name] ?? block.name });
 
           const correlationId = uuid();
-          const job: ScrapeJob = {
-            skill: block.name as SkillName,
-            correlationId,
-            idempotencyKey: idempotencyKey({ s: block.name, ...(block.input as object), c: correlationId }),
-            userId: userId ?? "",
-            credentialId: credentialId ?? "",
-            rfc: rfc ?? "",
-            input: block.input as Record<string, unknown>,
-          };
 
           try {
-            const result = await runSkillViaQueue(job);
+            let result: SkillResult;
+
+            if (block.name === "extractTicketData") {
+              // Lightweight tool: execute inline, no BullMQ
+              const input = block.input as { imageBase64: string; imageMediaType: string };
+              const extraction = await extractTicket(input.imageBase64, input.imageMediaType, correlationId);
+              result = { skill: "extractTicket", extraction };
+            } else {
+              // Heavy tool: dispatch via BullMQ queue
+              const job: ScrapeJob = {
+                skill: block.name as SkillName,
+                correlationId,
+                idempotencyKey: idempotencyKey({ s: block.name, ...(block.input as object), c: correlationId }),
+                userId: userId ?? "",
+                credentialId: credentialId ?? "",
+                rfc: rfc ?? "",
+                input: block.input as Record<string, unknown>,
+              };
+              result = await runSkillViaQueue(job);
+            }
+
             lastSkillResult = result;
             send({ type: "tool_result", skill: block.name, result });
             toolResults.push({

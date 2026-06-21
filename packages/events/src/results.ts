@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type TicketExtraction } from "./skills.js";
 
 /** ---- Normalized result shapes returned by the scraper flows ---- */
 
@@ -92,4 +93,5 @@ export type SkillResult =
   | { skill: "getReceiptInvoices"; invoices: Invoice[] }
   | { skill: "generateCSF"; csf: CSF }
   | { skill: "generateInvoice"; status: "previewed"; preview: InvoicePreview }
-  | { skill: "generateInvoice"; status: "issued"; issued: IssuedInvoice };
+  | { skill: "generateInvoice"; status: "issued"; issued: IssuedInvoice }
+  | { skill: "extractTicket"; extraction: TicketExtraction };

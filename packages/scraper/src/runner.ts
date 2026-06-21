@@ -13,6 +13,7 @@ import { getEmitedInvoices } from "./flows/getEmitedInvoices.js";
 import { getReceiptInvoices } from "./flows/getReceiptInvoices.js";
 import { generateCSF } from "./flows/generateCSF.js";
 import { generateInvoice } from "./flows/generateInvoice.js";
+import { extractTicket } from "./flows/extractTicket.js";
 
 export interface RunSkillArgs {
   skill: SkillName;
@@ -134,6 +135,11 @@ export async function runSkill(args: RunSkillArgs): Promise<SkillResult> {
         return res.status === "previewed"
           ? { skill, status: "previewed", preview: res.preview }
           : { skill, status: "issued", issued: res.issued };
+      }
+      case "extractTicket": {
+        const { imageBase64, imageMediaType } = input as { imageBase64: string; imageMediaType: string };
+        const extraction = await extractTicket(imageBase64, imageMediaType, correlationId);
+        return { skill, extraction };
       }
       default: {
         const _exhaustive: never = skill;

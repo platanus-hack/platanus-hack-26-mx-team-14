@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type SyntheticEvent } from 'react';
-import { Send, LogOut, Mic, MicOff } from 'lucide-react';
+import { Send, LogOut, Mic, MicOff, ImagePlus, X } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import Orb from '../components/Orb';
 import CsfCard from '../components/CsfCard';
@@ -66,10 +66,11 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
   const inputRef = useRef<HTMLInputElement>(null);
 
   const agent = useVoiceAgent();
-  const { status, messages, streamText, toolActivity, skillResult, error, sessionActive } = agent;
+  const { status, messages, streamText, toolActivity, skillResult, error, sessionActive, attachedImage, attachImage, detachImage } = agent;
 
   const glow = orbGlow[status] ?? orbGlow.idle;
   const orbState = orbStateMap[status] ?? 'idle';
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   // Once the agent produces its first result, the layout latches to 'split'.
   const layout: LayoutState = messages.length > 0 || skillResult ? 'split' : baseLayout;
@@ -94,11 +95,17 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
 
   async function handleSend(e: SyntheticEvent) {
     e.preventDefault();
-    if (!inputText.trim()) return;
+    if (!inputText.trim() && !attachedImage) return;
     if (layout === 'empty') setBaseLayout('active');
     const text = inputText;
     setInputText('');
     await agent.sendText(text);
+  }
+
+  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) attachImage(file);
+    e.target.value = '';
   }
 
   function handleMicClick() {
@@ -359,6 +366,25 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                       return null;
                     })()}
 
+                    {/* All user messages with images */}
+                    {messages.filter(m => m.role === 'user' && m.image).map((msg, i) => (
+                      <motion.div
+                        key={`user-img-${i}`}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-emerald/10 border border-emerald/15 rounded-2xl px-5 py-4 self-end max-w-[80%]"
+                      >
+                        <img
+                          src={msg.image!.previewUrl}
+                          alt="Imagen enviada"
+                          className="rounded-lg max-h-48 object-contain mb-2"
+                        />
+                        {msg.content && (
+                          <p className="text-sm text-ink/80">{msg.content}</p>
+                        )}
+                      </motion.div>
+                    ))}
+
                     {/* Dynamic skill result card */}
                     <AnimatePresence>
                       {skillResult && (
@@ -406,6 +432,13 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
                           : 'bg-surface text-muted border border-border self-start max-w-[92%]'
                       }`}
                     >
+                      {msg.image && (
+                        <img
+                          src={msg.image.previewUrl}
+                          alt="Imagen enviada"
+                          className="rounded-md max-h-16 object-contain mb-1"
+                        />
+                      )}
                       {msg.role === 'assistant' ? <Markdown>{msg.content}</Markdown> : msg.content}
                     </motion.div>
                   ))}
@@ -432,43 +465,93 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
 
         <form
           onSubmit={handleSend}
-          className="max-w-2xl mx-auto flex items-center gap-3 bg-surface/90 backdrop-blur-md border border-border rounded-full px-4 py-2.5 transition-[border-color] duration-200 focus-within:border-emerald/40"
+          className="max-w-2xl mx-auto flex flex-col gap-2 bg-surface/90 backdrop-blur-md border border-border rounded-2xl px-4 py-3 transition-[border-color] duration-200 focus-within:border-emerald/40"
         >
-          <motion.button
-            type="button"
-            onClick={handleMicClick}
-            aria-label={sessionActive ? 'Detener micrófono' : 'Activar micrófono'}
-            aria-pressed={sessionActive}
-            className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
-              sessionActive ? 'bg-emerald text-bg' : 'bg-surface-hi text-muted hover:text-ink hover:bg-border'
-            }`}
-            whileTap={{ scale: 0.9 }}
-            transition={{ duration: 0.12 }}
-          >
-            {sessionActive ? <MicOff size={18} /> : <Mic size={18} />}
-          </motion.button>
+          {/* Image preview */}
+          <AnimatePresence>
+            {attachedImage && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="relative inline-block">
+                  <img
+                    src={attachedImage.previewUrl}
+                    alt="Imagen adjunta"
+                    className="h-20 rounded-lg object-cover border border-border"
+                  />
+                  <button
+                    type="button"
+                    onClick={detachImage}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
+                    aria-label="Quitar imagen"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputText}
-            onChange={e => setInputText(e.target.value)}
-            placeholder="Escribe tu consulta fiscal…"
-            disabled={status === 'processing'}
-            className="flex-1 bg-transparent text-sm text-ink placeholder:text-subtle focus:outline-none disabled:opacity-50"
-            aria-label="Consulta al asistente"
-          />
+          <div className="flex items-center gap-2">
+            <motion.button
+              type="button"
+              onClick={handleMicClick}
+              aria-label={sessionActive ? 'Detener micrófono' : 'Activar micrófono'}
+              aria-pressed={sessionActive}
+              className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                sessionActive ? 'bg-emerald text-bg' : 'bg-surface-hi text-muted hover:text-ink hover:bg-border'
+              }`}
+              whileTap={{ scale: 0.9 }}
+              transition={{ duration: 0.12 }}
+            >
+              {sessionActive ? <MicOff size={18} /> : <Mic size={18} />}
+            </motion.button>
 
-          <motion.button
-            type="submit"
-            disabled={!inputText.trim() || status === 'processing'}
-            aria-label="Enviar consulta"
-            className="shrink-0 w-9 h-9 rounded-full bg-emerald flex items-center justify-center text-bg hover:opacity-90 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
-            whileTap={{ scale: 0.88 }}
-            transition={{ duration: 0.12 }}
-          >
-            <Send size={14} />
-          </motion.button>
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={handleImageSelect}
+              aria-label="Adjuntar imagen"
+            />
+            <motion.button
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+              disabled={status === 'processing'}
+              aria-label="Adjuntar imagen"
+              className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center bg-surface-hi text-muted hover:text-ink hover:bg-border transition-colors disabled:opacity-50"
+              whileTap={{ scale: 0.9 }}
+              transition={{ duration: 0.12 }}
+            >
+              <ImagePlus size={18} />
+            </motion.button>
+
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputText}
+              onChange={e => setInputText(e.target.value)}
+              placeholder={attachedImage ? "Describe la imagen…" : "Escribe tu consulta fiscal…"}
+              disabled={status === 'processing'}
+              className="flex-1 bg-transparent text-sm text-ink placeholder:text-subtle focus:outline-none disabled:opacity-50"
+              aria-label="Consulta al asistente"
+            />
+
+            <motion.button
+              type="submit"
+              disabled={(!inputText.trim() && !attachedImage) || status === 'processing'}
+              aria-label="Enviar consulta"
+              className="shrink-0 w-9 h-9 rounded-full bg-emerald flex items-center justify-center text-bg hover:opacity-90 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
+              whileTap={{ scale: 0.88 }}
+              transition={{ duration: 0.12 }}
+            >
+              <Send size={14} />
+            </motion.button>
+          </div>
         </form>
 
         <p className="text-center text-[10px] text-subtle mt-2 select-none">

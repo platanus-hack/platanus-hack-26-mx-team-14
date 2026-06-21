@@ -92,6 +92,7 @@ export const SEL = {
   // `input.itemdeCintillo[view-model=…]` and its label renders in `#itemdeCintillo<catalogo>`.
   factura: {
     loadingModal: "#myModal.in, #modalGuardando.in, #ajaxModal.in, .blockUI, #loadAjax.overlay",
+    errorModal: "#modal-error.in, .modal.error.in",
 
     // -- Comprobante (cintillo widgets; pre-filled from the emisor's config) --
     regimen: {
