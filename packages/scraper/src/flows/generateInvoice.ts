@@ -5,6 +5,7 @@ import { login } from "../auth.js";
 import { SEL } from "../sat.js";
 import { storeArtifact } from "../artifacts.js";
 import { extractInvoiceFromPdf } from "../invoice-extract.js";
+import { humanDelay } from "../human.js";
 import { type FlowContext, step } from "./context.js";
 
 /** RFC genérico nacional (público en general) and extranjero. */
@@ -14,14 +15,24 @@ const RFC_GENERICO_EXTRANJERO = "XEXX010101000";
 /** Default receptor for ticket-to-invoice conversion (Público en General) */
 const DEFAULT_RECEPTOR = {
   rfc: "XAXX010101000",
-  // "FACTURA GLOBAL" is the proven name for the genérico RFC: the SAT form requires a
-  // non-empty Nombre, and unlike "PÚBLICO EN GENERAL" it does NOT trigger CFDI 4.0's
-  // Información Global requirement — so it works for a normal single-concept invoice.
-  nombre: "FACTURA GLOBAL",
+  // The SAT padrón has the genérico RFC registered as "PÚBLICO EN GENERAL" — that exact
+  // name is what the portal accepts. The catch: it requires checking "Es una Factura
+  // Global" (InformacionGlobal), which we auto-enable for the genérico RFC below.
+  nombre: "PUBLICO EN GENERAL",
   codigoPostal: "01805",
   regimen: "616",  // Sin obligaciones fiscales
   uso: "S01",  // Sin efectos fiscales
 } as const;
+
+/** Default Información Global for a same-day público-en-general sale (Diario, mes/año actuales). */
+function defaultFacturaGlobal(): NonNullable<GenerateInvoiceInput["facturaGlobal"]> {
+  const now = new Date();
+  return {
+    periodicidad: "01", // Diario
+    meses: String(now.getMonth() + 1).padStart(2, "0"),
+    anio: now.getFullYear(),
+  };
+}
 
 /**
  * Dismiss any Bootstrap error modal that might be blocking pointer events.
@@ -65,7 +76,10 @@ async function dismissErrorModals(session: Session): Promise<void> {
  */
 async function clickWithErrorDismiss(session: Session, selector: string): Promise<void> {
   try {
-    await session.click(selector);
+    // Short first-attempt timeout: a click that's going to be blocked by a modal
+    // shouldn't burn Playwright's full 30s default before we recover. If the button is
+    // genuinely ready it clicks in well under 10s anyway.
+    await session.click(selector, { timeoutMs: 10_000 });
   } catch (err) {
     const msg = (err as Error).message ?? "";
     // A click can time out because a modal intercepts pointer events OR because an
@@ -77,9 +91,16 @@ async function clickWithErrorDismiss(session: Session, selector: string): Promis
       await dismissErrorModals(session);
       await session.waitForHidden(SEL.factura.loadingModal).catch(() => void 0);
       try {
-        await session.click(selector);
-      } catch (retryErr) {
-        throw new Error(`click failed on "${selector}": ${(retryErr as Error).message}`);
+        await session.click(selector, { timeoutMs: 10_000 });
+      } catch {
+        // Last resort: force the click, bypassing actionability checks (an invisible
+        // overlay or a "stable"/pointer-events guard can keep an otherwise-ready button
+        // from being clicked normally). If THIS fails, the button is genuinely unusable.
+        try {
+          await session.click(selector, { force: true, timeoutMs: 10_000 });
+        } catch (forceErr) {
+          throw new Error(`click failed on "${selector}": ${(forceErr as Error).message}`);
+        }
       }
     } else {
       throw err;
@@ -135,12 +156,10 @@ export function validateInvoiceInput(input: GenerateInvoiceInput): void {
   }
 
   if (esGenerico) {
-    // CFDI 4.0: For público en general (genérico RFC), validate name and régimen/uso.
-    // "PÚBLICO EN GENERAL" requires facturaGlobal, so we auto-correct to "FACTURA GLOBAL"
-    // which is a valid alternate name that does NOT require facturaGlobal.
-    const nombre = input.receptor.nombreRazonSocial.trim().toUpperCase();
-
-    // Uso must be S01 and régimen 616 for the genérico either way.
+    // CFDI 4.0: público en general (genérico RFC) is issued as a Factura Global with
+    // Uso S01 and régimen 616. generateInvoice auto-enables facturaGlobal for this RFC,
+    // so by the time we reach the SAT the InformacionGlobal node will be present.
+    // Uso must be S01 and régimen 616 for the genérico.
     if (input.receptor.usoCFDI.toUpperCase() !== "S01") {
       errs.push(`Para ${rfc} el Uso CFDI debe ser S01 (Sin efectos fiscales).`);
     }
@@ -176,15 +195,17 @@ export async function generateInvoice(
 ): Promise<GenerateInvoiceResult> {
   const { session } = ctx;
 
-  // Auto-correct the receptor name for the genérico RFC. The SAT form REQUIRES a
-  // non-empty Nombre, but the name "PÚBLICO EN GENERAL" triggers CFDI 4.0's Información
-  // Global requirement. "FACTURA GLOBAL" satisfies both: non-empty and no facturaGlobal.
+  // Genérico RFC (público en general): use the canonical name the SAT padrón expects
+  // ("PÚBLICO EN GENERAL") and AUTO-ENABLE Información Global (factura global) — that
+  // combination is what CFDI 4.0 requires, and the portal rejects the vista previa
+  // without the "Es una Factura Global" box checked.
   const rfc = input.receptor.rfc.toUpperCase().trim();
   const esGenerico = rfc === RFC_GENERICO_NACIONAL || rfc === RFC_GENERICO_EXTRANJERO;
   if (esGenerico) {
-    const nombre = input.receptor.nombreRazonSocial.trim().toUpperCase();
-    if (!nombre || nombre === "PUBLICO EN GENERAL" || nombre === "PÚBLICO EN GENERAL") {
-      input.receptor.nombreRazonSocial = DEFAULT_RECEPTOR.nombre; // "FACTURA GLOBAL"
+    input.receptor.nombreRazonSocial = DEFAULT_RECEPTOR.nombre; // "PUBLICO EN GENERAL"
+    if (!input.facturaGlobal) {
+      input.facturaGlobal = defaultFacturaGlobal();
+      ctx.log.info({ facturaGlobal: input.facturaGlobal }, "auto-habilitando Factura Global para RFC genérico");
     }
   }
 
@@ -216,8 +237,10 @@ export async function generateInvoice(
   // Moneda is a jQuery-UI autocomplete: type the code, then pick the first match.
   const moneda = input.moneda ?? "MXN";
   await autocompletePick(session, SEL.factura.moneda, moneda);
+  ctx.log.info({ label: "Moneda", value: moneda }, "✏️ campo rellenado (autocomplete)");
   if (moneda !== "MXN" && input.tipoCambio) {
     await session.fill(SEL.factura.tipoCambio, String(input.tipoCambio));
+    ctx.log.info({ label: "Tipo de Cambio", value: input.tipoCambio }, "✏️ campo rellenado");
   }
 
   // Receptor — order requested: (1) select the RFC in Cliente Frecuente and let the
@@ -239,10 +262,15 @@ export async function generateInvoice(
   // Fill only EDITABLE fields — for público en general the SAT auto-fills and DISABLES
   // some receptor inputs (e.g. CP = emisor's CP). Forcing a disabled field just hangs;
   // skip it (the SAT already holds the correct value) and let the final check confirm.
+  ctx.log.info(
+    { rfc: receptorRfc, nombre: receptorNombre, cp: receptorCp, regimen: receptorRegimen, esGenerico },
+    "📝 rellenando receptor",
+  );
   await fillIfEditable(session, SEL.factura.rfcReceptor, receptorRfc, ctx, "RFC");
   await fillIfEditable(session, SEL.factura.nombreReceptor, receptorNombre, ctx, "Nombre");
   await fillIfEditable(session, SEL.factura.codigoPostalReceptor, receptorCp, ctx, "CP");
   await autocompletePick(session, SEL.factura.regimenReceptor, receptorRegimen);
+  ctx.log.info({ label: "Régimen Fiscal", value: receptorRegimen }, "✏️ campo rellenado (autocomplete)");
 
   // Factura Global (InformacionGlobal) — required for público en general.
   if (input.facturaGlobal) {
@@ -257,6 +285,10 @@ export async function generateInvoice(
   const usoCfdi = esGenerico ? "S01" : input.receptor.usoCFDI;
   try {
     await setUsoCfdi(session, usoCfdi, ctx);
+    ctx.log.info(
+      { label: "Uso de la Factura", value: usoCfdi, landed: await readValue(session, SEL.factura.usoCfdi) },
+      "✏️ campo rellenado (uso CFDI)",
+    );
   } catch (e) {
     ctx.log.warn({ err: (e as Error).message }, "setUsoCfdi failed (continuing to diagnostics)");
   }
@@ -274,24 +306,92 @@ export async function generateInvoice(
   await ensureRequiredReceptorFields(session, input, ctx);
 
   step(ctx, "Agregando conceptos");
+  ctx.log.info({ build: "conceptos-autocomplete-v2 (type+verify+visible)" }, "🏷️ marcador de versión del flujo");
   await assertConceptoSelectorsCaptured();
+  let idx = 0;
   for (const c of input.conceptos) {
+    idx++;
+    ctx.log.info(
+      {
+        n: idx,
+        de: input.conceptos.length,
+        descripcion: c.descripcion,
+        claveProdServ: c.claveProdServ,
+        claveUnidad: c.claveUnidad,
+        cantidad: c.cantidad,
+        valorUnitario: c.valorUnitario,
+        descuento: c.descuento ?? 0,
+        objetoImpuesto: c.objetoImpuesto,
+      },
+      `📦 rellenando concepto ${idx}/${input.conceptos.length}`,
+    );
     await clickWithErrorDismiss(session, SEL.factura.agregarConcepto);
     // The edit row renders after "Agregar"; wait for its first field before filling.
     await session.waitFor(SEL.factura.descripcion, { state: "visible", timeoutMs: 10_000 });
     // ClaveProdServ / ClaveUnidad are catalog autocompletes; the rest are plain inputs.
-    if (c.claveProdServ) await autocompletePick(session, SEL.factura.claveProdServ, c.claveProdServ);
+    if (c.claveProdServ) {
+      await autocompletePick(session, SEL.factura.claveProdServ, c.claveProdServ, ctx.log);
+      const landed = await readValue(session, SEL.factura.claveProdServ);
+      ctx.log.info({ n: idx, label: "ClaveProdServ", value: c.claveProdServ, landed }, "✏️ concepto: campo rellenado");
+    }
     await session.fill(SEL.factura.descripcion, c.descripcion);
-    if (c.claveUnidad) await autocompletePick(session, SEL.factura.claveUnidad, c.claveUnidad);
+    ctx.log.info({ n: idx, label: "Descripción", value: c.descripcion }, "✏️ concepto: campo rellenado");
+    if (c.claveUnidad) {
+      await autocompletePick(session, SEL.factura.claveUnidad, c.claveUnidad, ctx.log);
+      const landed = await readValue(session, SEL.factura.claveUnidad);
+      ctx.log.info({ n: idx, label: "ClaveUnidad", value: c.claveUnidad, landed }, "✏️ concepto: campo rellenado");
+    }
     await session.fill(SEL.factura.cantidad, String(c.cantidad));
+    ctx.log.info({ n: idx, label: "Cantidad", value: c.cantidad }, "✏️ concepto: campo rellenado");
     await session.fill(SEL.factura.valorUnitario, String(c.valorUnitario));
+    ctx.log.info({ n: idx, label: "Valor Unitario", value: c.valorUnitario }, "✏️ concepto: campo rellenado");
     await session.fill(SEL.factura.descuento, String(c.descuento ?? 0));
-    if (c.objetoImpuesto) await session.selectOption(SEL.factura.objetoImpuesto, c.objetoImpuesto);
-    if (c.numeroIdentificacion)
+    ctx.log.info({ n: idx, label: "Descuento", value: c.descuento ?? 0 }, "✏️ concepto: campo rellenado");
+    if (c.objetoImpuesto) {
+      await session.selectOption(SEL.factura.objetoImpuesto, c.objetoImpuesto);
+      ctx.log.info({ n: idx, label: "Objeto Impuesto", value: c.objetoImpuesto }, "✏️ concepto: campo rellenado");
+    }
+    if (c.numeroIdentificacion) {
       await session.fill(SEL.factura.numeroIdentificacion, c.numeroIdentificacion);
+      ctx.log.info({ n: idx, label: "Núm. Identificación", value: c.numeroIdentificacion }, "✏️ concepto: campo rellenado");
+    }
     await dismissErrorModals(session);
     await clickWithErrorDismiss(session, SEL.factura.guardarConcepto);
     await session.waitForHidden(SEL.factura.loadingModal);
+    // The SAT shows "Verifique los datos / valide los campos requeridos" when a required
+    // concept field (e.g. ClaveProdServ/ClaveUnidad) didn't take. Detect it and fail loud
+    // with the field values we attempted, instead of falsely logging "guardado".
+    const saveModal = await readVisibleModalText(session);
+    if (/verifique los datos|valide los campos|campos requeridos/i.test(saveModal)) {
+      const estado = {
+        claveProdServ: await readValue(session, SEL.factura.claveProdServ),
+        descripcion: await readValue(session, SEL.factura.descripcion),
+        claveUnidad: await readValue(session, SEL.factura.claveUnidad),
+        cantidad: await readValue(session, SEL.factura.cantidad),
+        valorUnitario: await readValue(session, SEL.factura.valorUnitario),
+      };
+      ctx.log.error({ n: idx, saveModal, estado }, "❌ el SAT rechazó el concepto (campos requeridos vacíos)");
+      throw new ValidationError(
+        `El SAT rechazó el concepto ${idx}: ${saveModal}. ` +
+          `Estado de campos: ${JSON.stringify(estado)}.`,
+      );
+    }
+    ctx.log.info({ n: idx }, "💾 concepto guardado");
+  }
+
+  // Capture the COMPLETE form (full page) before saving — lets us verify exactly what
+  // was filled (receptor, factura global, conceptos, totales) when something is rejected.
+  step(ctx, "Capturando formulario antes de Guardar");
+  try {
+    const shot = await session.screenshot(undefined, { fullPage: true });
+    const formShot = await storeArtifact("png", shot, {
+      correlationId: ctx.correlationId,
+      label: "formulario-antes-de-guardar",
+    });
+    ctx.log.info({ screenshot: formShot.url }, "📸 screenshot del formulario completo (antes de Guardar)");
+    ctx.emit?.({ kind: "scraping", label: "Formulario capturado antes de guardar", status: "ok" });
+  } catch (e) {
+    ctx.log.warn({ err: (e as Error).message }, "no pude capturar el formulario antes de Guardar");
   }
 
   step(ctx, "Guardando borrador");
@@ -301,9 +401,45 @@ export async function generateInvoice(
 
   step(ctx, "Generando vista previa");
   await dismissErrorModals(session);
-  const download = await session.captureDownload(async () => {
-    await clickWithErrorDismiss(session, SEL.factura.vistaPrevia);
-  });
+
+  // Linux/Docker parity with generateCSF: the SAT opens the preview PDF in a NEW TAB via
+  // window.open(). On a slow containerized host (a) the button handler may not be wired
+  // yet when we click — the default action fires and nothing downloads — and (b) the
+  // popup mechanics differ from macOS. Mirror the CSF flow: let the page settle, patch
+  // window.open so we also capture the URL it opens, then drive captureDownload.
+  await session.waitForLoad().catch(() => void 0);
+  await humanDelay(2500, 3500); // give the SAT JS time to wire the Vista Previa handler
+  await session
+    .evaluate(
+      `(() => { if (!window.__satOpenPatched) { window.__satOpen = []; const o = window.open; window.open = function (u) { try { window.__satOpen.push(String(u)); } catch (e) {} return o.apply(this, arguments); }; window.__satOpenPatched = 1; } })()`,
+    )
+    .catch(() => void 0);
+
+  let download: Awaited<ReturnType<typeof session.captureDownload>>;
+  try {
+    download = await session.captureDownload(async () => {
+      await clickWithErrorDismiss(session, SEL.factura.vistaPrevia);
+      // DIAG (same as CSF): what did the click do? URL it tried to open + current URL.
+      const opened = await session
+        .evaluate<string[]>(`window.__satOpen || []`)
+        .catch(() => [] as string[]);
+      ctx.log.info({ opened, url: session.url() }, "DIAG tras click Vista Previa");
+      // If the SAT raised a validation modal instead of generating the PDF, log it now
+      // so the failure is diagnosable from the logs (not just the page dump).
+      const modalText = await readVisibleModalText(session);
+      if (modalText) ctx.log.warn({ modalText }, "modal/alerta visible tras click Vista Previa");
+    }, 90_000);
+  } catch (err) {
+    // No PDF arrived. If a SAT modal is on screen, its text IS the real reason — surface
+    // it instead of the generic "no se obtuvo el PDF" so the user knows what to fix.
+    const modalText = await readVisibleModalText(session);
+    const opened = await session.evaluate<string[]>(`window.__satOpen || []`).catch(() => [] as string[]);
+    ctx.log.warn({ opened, url: session.url(), modalText }, "vista previa sin PDF — diagnóstico");
+    if (modalText) {
+      throw new ValidationError(`El SAT no generó la vista previa: ${modalText}`);
+    }
+    throw err;
+  }
   const previewArtifact = await storeArtifact("pdf", download.buffer, {
     correlationId: ctx.correlationId,
     label: "vista-previa",
@@ -325,6 +461,7 @@ export async function generateInvoice(
     iva,
     total: round2(subtotal + iva),
     rawArtifactId: previewArtifact.id,
+    pdfBase64: download.buffer.toString("base64"),
     analysis,
   };
   if (analysis?.insight) {
@@ -424,15 +561,51 @@ async function autocompletePick(
   session: Session,
   selector: string,
   value: string,
+  log?: FlowContext["log"],
 ): Promise<void> {
-  await session.fill(selector, value);
-  await session.type(selector, " ");
-  await session.fill(selector, value);
-  await session.waitFor(SEL.factura.autocompleteMenu, { state: "visible", timeoutMs: 5000 });
-  await dbg(session, `server-pick "${value}"`, selector, "menu");
-  await session.click(SEL.factura.autocompleteMenu);
-  await session.waitForHidden(SEL.factura.loadingModal);
-  await dbg(session, `server-pick "${value}"`, selector, "after");
+  // jQuery-UI autocompletes (incl. the server-backed catalogs ClaveProdServ/ClaveUnidad)
+  // search on real KEY events. session.fill() sets .value directly and NEVER fires them,
+  // so on a slow/containerized host the dropdown never queries and the field is left
+  // empty (→ "Por favor valide los campos requeridos"). TYPE the value char-by-char to
+  // trigger the search, wait for the menu, pick the first match, and VERIFY it landed.
+  const menuItems = async (): Promise<string[]> =>
+    session
+      .evaluate<string[]>(
+        `[...document.querySelectorAll('ul.ui-autocomplete:visible li')].map(li => (li.textContent||'').trim()).slice(0, 8)`,
+      )
+      .catch(() => []);
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await session.fill(selector, "");
+    await session.type(selector, value, { delayMs: 60 });
+    let menuVisible = true;
+    try {
+      // Server catalogs can be slow in Docker — give the dropdown generous time to query.
+      await session.waitFor(SEL.factura.autocompleteMenu, { state: "visible", timeoutMs: 12_000 });
+    } catch {
+      menuVisible = false;
+    }
+    // ALWAYS log what the dropdown offered — the #1 clue for a stuck catalog field.
+    log?.info({ selector, value, attempt, menuVisible, items: await menuItems() }, "🔎 autocomplete: menú del catálogo");
+    if (!menuVisible) {
+      if (attempt === 3) {
+        throw new ValidationError(
+          `El catálogo del SAT no devolvió resultados para "${value}" (campo ${selector}). ` +
+            `Verifica que el código exista en el catálogo correspondiente.`,
+        );
+      }
+      continue; // retry from a clean field
+    }
+    await session.click(SEL.factura.autocompleteMenu);
+    await session.waitForHidden(SEL.factura.loadingModal);
+    // Verify a value actually landed; if the pick didn't stick, retry.
+    const landed = (await readValue(session, selector)).trim();
+    log?.info({ selector, value, attempt, landed }, "🔎 autocomplete: valor tras seleccionar");
+    if (landed) return;
+  }
+  throw new ValidationError(
+    `No pude seleccionar "${value}" del catálogo del SAT (campo ${selector}) tras 3 intentos.`,
+  );
 }
 
 /**
@@ -473,6 +646,37 @@ async function dumpReceptorState(session: Session): Promise<void> {
   }
 }
 
+/**
+ * Read the text of any visible SAT modal / alert / validation message. When the vista
+ * previa click produces a validation popup instead of a PDF, this surfaces the SAT's
+ * actual complaint ("faltan datos…") instead of a generic download timeout.
+ */
+async function readVisibleModalText(session: Session): Promise<string> {
+  return session
+    .evaluate<string>(
+      `(() => {
+        const sels = [
+          '#modal-error', '.modal.in', '.modal.show', '.bootbox.in',
+          ".modal[style*='display: block']", ".modal[style*='display:block']",
+          '.validation-summary-errors', '.field-validation-error',
+          '.alert-danger', '.alert-warning', '[role=alert]',
+        ];
+        const seen = new Set();
+        const out = [];
+        for (const sel of sels) {
+          document.querySelectorAll(sel).forEach((el) => {
+            const r = el.getBoundingClientRect();
+            const visible = r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden';
+            const t = (el.textContent || '').replace(/\\s+/g, ' ').trim();
+            if (visible && t && !seen.has(t)) { seen.add(t); out.push(t); }
+          });
+        }
+        return out.join(' | ').slice(0, 600);
+      })()`,
+    )
+    .catch(() => "");
+}
+
 /** Runtime `.value` of the first element matching `selector` ("" if none/hidden). */
 function readValue(session: Session, selector: string): Promise<string> {
   // session.inputValue (Playwright locator) supports `:visible`, unlike querySelector.
@@ -494,8 +698,11 @@ async function fillIfEditable(
 ): Promise<void> {
   if (await session.isEditable(selector)) {
     await session.fill(selector, value);
+    const landed = await readValue(session, selector);
+    ctx.log.info({ label, value, landed }, "✏️ campo rellenado");
   } else {
-    ctx.log.info({ label }, "campo no editable (auto-gestionado por el SAT) — se omite");
+    const current = await readValue(session, selector);
+    ctx.log.info({ label, intended: value, current }, "campo no editable (auto-gestionado por el SAT) — se omite");
   }
 }
 
@@ -622,13 +829,18 @@ async function enableFacturaGlobal(
   );
   if (!checked) {
     ctx.log.warn("No pude marcar 'Es una Factura Global' (FAC111) — InformacionGlobal no se creará");
+  } else {
+    ctx.log.info({ label: "Es una Factura Global", value: "marcada ✓" }, "✏️ campo rellenado");
   }
   // Fill the InformacionGlobal trio. Periodicidad/Mes are <select> (commit on change);
   // Año binds on BLUR, so blur it explicitly or KO never reads the typed value.
   await session.waitFor(SEL.factura.periodicidad, { state: "visible", timeoutMs: 10_000 });
   await session.selectOption(SEL.factura.periodicidad, global.periodicidad);
+  ctx.log.info({ label: "Periodicidad", value: global.periodicidad }, "✏️ campo rellenado");
   await session.selectOption(SEL.factura.mesesGlobal, global.meses);
+  ctx.log.info({ label: "Meses", value: global.meses }, "✏️ campo rellenado");
   await session.fill(SEL.factura.anioGlobal, String(global.anio));
+  ctx.log.info({ label: "Año", value: global.anio }, "✏️ campo rellenado");
   await session.evaluate(
     `document.querySelector(${JSON.stringify(SEL.factura.anioGlobal)})?.blur()`,
   );

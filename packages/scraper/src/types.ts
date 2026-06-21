@@ -14,6 +14,8 @@ export interface WaitOpts {
 
 export interface ClickOpts {
   timeoutMs?: number;
+  /** Bypass actionability checks (visibility/stability/pointer-events). Last-resort. */
+  force?: boolean;
 }
 
 export interface Session {
@@ -43,7 +45,7 @@ export interface Session {
   exists(selector: string): Promise<boolean>;
 
   /** Screenshot of the page or a single element (used to feed captchas to Claude). */
-  screenshot(selector?: string): Promise<Buffer>;
+  screenshot(selector?: string, opts?: { fullPage?: boolean }): Promise<Buffer>;
 
   /** Run `trigger`, capture the file download it produces (PDF/XML). */
   captureDownload(trigger: () => Promise<void>, timeoutMs?: number): Promise<Download>;

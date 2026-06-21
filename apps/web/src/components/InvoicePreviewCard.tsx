@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { FileCheck, AlertTriangle } from 'lucide-react';
+import { FileCheck, AlertTriangle, Download } from 'lucide-react';
 import type { InvoicePreview } from '../types';
 
 interface InvoicePreviewCardProps {
@@ -20,6 +20,21 @@ export default function InvoicePreviewCard({ preview, onConfirm, onCancel }: Inv
   function handleConfirm() {
     setConfirmed(true);
     onConfirm?.();
+  }
+
+  function handleDownload() {
+    if (!preview.pdfBase64) return;
+    // base64 → bytes → Blob → trigger a download (no server round-trip needed).
+    const bytes = Uint8Array.from(atob(preview.pdfBase64), (c) => c.charCodeAt(0));
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vista-previa-${preview.receptorRfc}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -88,6 +103,20 @@ export default function InvoicePreviewCard({ preview, onConfirm, onCancel }: Inv
             </div>
           </div>
         </div>
+
+        {/* Download preview PDF */}
+        {preview.pdfBase64 && (
+          <div className="px-5 pt-4">
+            <button
+              type="button"
+              onClick={handleDownload}
+              className="w-full h-10 rounded-full border border-border text-sm text-muted hover:text-ink hover:border-ink/30 transition-colors flex items-center justify-center gap-2"
+            >
+              <Download size={14} aria-hidden="true" />
+              Descargar vista previa (PDF)
+            </button>
+          </div>
+        )}
 
         {/* Actions */}
         {!confirmed ? (
