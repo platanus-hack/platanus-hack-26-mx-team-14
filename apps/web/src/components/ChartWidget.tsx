@@ -43,6 +43,7 @@ function PieChart({ data, donut, color }: { data: WidgetDataPoint[]; donut?: boo
     const x1 = cx + r * Math.cos(angle);
     const y1 = cy + r * Math.sin(angle);
     const midAngle = angle + sweep / 2;
+    // eslint-disable-next-line -- local render-only accumulator for the pie sweep; intentional, not stale state
     angle += sweep;
     const x2 = cx + r * Math.cos(angle);
     const y2 = cy + r * Math.sin(angle);
