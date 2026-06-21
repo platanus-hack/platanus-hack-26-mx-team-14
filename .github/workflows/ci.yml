@@ -50,12 +50,11 @@ jobs:
       - name: Build
         run: pnpm build
 
-  # ── Informativo: no bloquea. Surface de problemas de lint sin frenar pushes ─
+  # ── Gate de lint (verde y limpio; mantenlo así) ────────────────────────────
   lint:
-    name: lint (informativo)
+    name: lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

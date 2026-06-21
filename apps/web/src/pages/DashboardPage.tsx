@@ -58,7 +58,10 @@ type LayoutState = 'empty' | 'active' | 'split';
 
 export default function DashboardPage({ onNavigate, onLogout }: DashboardPageProps) {
   const reduce = useReducedMotion();
-  const [layout, setLayout] = useState<LayoutState>('empty');
+  // `baseLayout` drives the pre-content phase (empty ↔ active); once the agent
+  // produces content the layout latches to 'split'. Deriving 'split' instead of
+  // setting it in an effect avoids react-hooks/set-state-in-effect.
+  const [baseLayout, setBaseLayout] = useState<Exclude<LayoutState, 'split'>>('empty');
   const [inputText, setInputText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -68,12 +71,8 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
   const glow = orbGlow[status] ?? orbGlow.idle;
   const orbState = orbStateMap[status] ?? 'idle';
 
-  // When the agent produces its first result, expand to split layout
-  useEffect(() => {
-    if ((messages.length > 0 || skillResult) && layout !== 'split') {
-      setLayout('split');
-    }
-  }, [messages.length, skillResult, layout]);
+  // Once the agent produces its first result, the layout latches to 'split'.
+  const layout: LayoutState = messages.length > 0 || skillResult ? 'split' : baseLayout;
 
   // Spacebar activates session when not focused on an input
   useEffect(() => {
@@ -81,7 +80,7 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
       const tag = (e.target as HTMLElement).tagName;
       if (e.code === 'Space' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
         e.preventDefault();
-        if (layout === 'empty') setLayout('active');
+        if (layout === 'empty') setBaseLayout('active');
         if (status === 'idle') agent.startSession();
         else if (status === 'ready' || status === 'playing') agent.endSession();
       }
@@ -96,14 +95,14 @@ export default function DashboardPage({ onNavigate, onLogout }: DashboardPagePro
   async function handleSend(e: SyntheticEvent) {
     e.preventDefault();
     if (!inputText.trim()) return;
-    if (layout === 'empty') setLayout('active');
+    if (layout === 'empty') setBaseLayout('active');
     const text = inputText;
     setInputText('');
     await agent.sendText(text);
   }
 
   function handleMicClick() {
-    if (layout === 'empty') setLayout('active');
+    if (layout === 'empty') setBaseLayout('active');
     if (status === 'idle') agent.startSession();
     else agent.endSession();
   }
