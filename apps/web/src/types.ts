@@ -53,6 +53,8 @@ export interface InvoicePreview {
   iva: number;
   total: number;
   rawArtifactId: string;
+  /** Vista-previa PDF, base64-encoded, for client-side download. */
+  pdfBase64?: string;
 }
 
 export interface IssuedInvoice {

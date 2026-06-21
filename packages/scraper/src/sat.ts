@@ -162,10 +162,13 @@ export const SEL = {
       "input.ui-autocomplete-input[view-model$='PFAC009Descrip']:visible, input.ui-autocomplete-input[view-model$='UsoFacturaMoralDescrip']:visible, input.ui-autocomplete-input[view-model$='UsoFacturaFisicaDescrip']:visible",
 
     // -- Conceptos grid (Knockout grid inputs and buttons).
+    // `:visible` on the catalog autocompletes — the grid can render a hidden template
+    // row with the same view-model, and typing into THAT leaves the visible field (the
+    // one the SAT validates) empty → "valide los campos requeridos".
     agregarConcepto: "button.btnNewItem[entidad$='0001']",
-    claveProdServ: "input[view-model$='PFAC013']",
+    claveProdServ: "input[view-model$='PFAC013']:visible",
     descripcion: "input[view-model$='PFAC083']",
-    claveUnidad: "input[view-model$='PFAC015']",
+    claveUnidad: "input[view-model$='PFAC015']:visible",
     cantidad: "input[view-model$='PFAC016']",
     valorUnitario: "input[view-model$='PFAC017']",
     descuento: "input[view-model$='PFAC020']",
@@ -174,10 +177,11 @@ export const SEL = {
     guardarConcepto: "button[id*='guardarEditar'][entidad$='0001']",
 
     // Footer actions are <a> with stable classes (verified via page dump), not
-    // <button id=…>. Text fallback kept in case the markup shifts.
-    guardar: "a.btn-guardar-das, a:has-text('Guardar')",
-    vistaPrevia: "a.btn-marcar-vista-previa, a:has-text('Vista Previa')",
-    sellar: "a.btn-sellar-factura, a:has-text('Sellar')",
+    // <button id=…>. Text fallback kept in case the markup shifts. `:visible` avoids
+    // grabbing a hidden duplicate anchor (the page renders these footer actions twice).
+    guardar: "a.btn-guardar-das:visible, a:has-text('Guardar'):visible",
+    vistaPrevia: "a.btn-marcar-vista-previa:visible, a:has-text('Vista Previa'):visible",
+    sellar: "a.btn-sellar-factura:visible, a:has-text('Sellar'):visible",
   },
 
   // --- Portal SAT login (RFC + Contraseña, no captcha) ---

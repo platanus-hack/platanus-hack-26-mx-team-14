@@ -76,6 +76,8 @@ export const invoicePreview = z.object({
   iva: z.number(),
   total: z.number(),
   rawArtifactId: z.string(),
+  /** The vista-previa PDF, base64-encoded, so the client can offer a download. */
+  pdfBase64: z.string().optional(),
   analysis: invoiceAnalysis.optional(),
 });
 export type InvoicePreview = z.infer<typeof invoicePreview>;

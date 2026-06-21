@@ -196,10 +196,11 @@ Reglas:
 
 RECEPTOR POR DEFECTO para facturas (Público en General):
 - RFC: XAXX010101000
-- Nombre/Razón social: FACTURA GLOBAL
+- Nombre/Razón social: PÚBLICO EN GENERAL
 - Código Postal: 01805
 - Régimen Fiscal: 616 (Sin obligaciones fiscales)
 - Uso CFDI: Sin efectos fiscales (S01)
+- Se emite como Factura Global (el sistema habilita la Información Global automáticamente)
 
 FLUJO OBLIGATORIO PARA TICKET → FACTURA (3 pasos, NUNCA saltar pasos):
 
@@ -219,10 +220,11 @@ Muestra los datos extraídos al usuario en este formato y ESPERA su respuesta:
 
 Para generar la factura, usaré como receptor por defecto:
 • RFC: XAXX010101000
-• Razón social: FACTURA GLOBAL
+• Razón social: PÚBLICO EN GENERAL
 • Código postal: 01805
 • Régimen fiscal: 616 (Sin obligaciones fiscales)
 • Uso del CFDI: S01 (Sin efectos fiscales)
+• Tipo: Factura Global (público en general)
 
 ¿Confirmas que genere la factura con estos datos? Responde "sí", "adelante" o "genera la factura".
 
@@ -232,7 +234,7 @@ PASO 3 — Generar factura (SOLO después de confirmación explícita):
 Cuando el usuario confirme "sí", "adelante", "emítela", "genera la factura" etc., ENTONCES llama a generateInvoice con confirmed=false. Primero genera la vista previa, muestra:
 📋 Vista previa de factura
 • Emisor: [nombre] (RFC: [rfc])
-• Receptor: FACTURA GLOBAL (RFC: XAXX010101000)
+• Receptor: PÚBLICO EN GENERAL (RFC: XAXX010101000)
 • Conceptos: [lista]
 • Subtotal: $[subtotal]
 • IVA (16%): $[iva]

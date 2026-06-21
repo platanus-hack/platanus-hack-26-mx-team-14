@@ -73,6 +73,15 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
       } catch { /* client disconnected */ }
     };
 
+    // Heartbeat: a long skill (generateInvoice) can run minutes with no SSE traffic.
+    // An idle stream gets dropped by browsers/proxies, so write an SSE comment line
+    // (": ping" — ignored by the client parser) every 15s to keep the connection warm.
+    const heartbeat = setInterval(() => {
+      try {
+        if (!pt.destroyed) pt.write(`: ping\n\n`);
+      } catch { /* client disconnected */ }
+    }, 15_000);
+
     reply
       .header("Content-Type", "text/event-stream; charset=utf-8")
       .header("Cache-Control", "no-cache")
@@ -269,17 +278,28 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
                 rfc: rfc ?? "",
                 input: block.input as Record<string, unknown>,
               };
-              result = await runSkillViaQueue(job);
+              // generateInvoice is the long pole (login + captcha + multi-step form +
+              // PDF + analysis) and routinely exceeds the 120s default — give it 5 min
+              // so the API doesn't abandon a job the worker is still completing.
+              const ttlMs = block.name === "generateInvoice" ? 300_000 : 120_000;
+              result = await runSkillViaQueue(job, ttlMs);
             }
 
             lastSkillResult = result;
             // Write path: persist the result into RAG memory (fire-and-forget).
             persistToolResult({ userId: userId ?? "", rfc: rfc ?? "" }, result, req.log);
+            // Frontend gets the full result (incl. the preview PDF for download).
             send({ type: "tool_result", skill: block.name, result });
+            // The model does NOT need the raw PDF bytes — strip the base64 before feeding
+            // the tool_result back into the conversation, or it bloats every turn's tokens.
+            const modelResult =
+              result.skill === "generateInvoice" && result.status === "previewed"
+                ? { ...result, preview: { ...result.preview, pdfBase64: undefined } }
+                : result;
             toolResults.push({
               type: "tool_result",
               tool_use_id: block.id,
-              content: JSON.stringify(result),
+              content: JSON.stringify(modelResult),
             });
           } catch (err) {
             send({ type: "tool_result", skill: block.name, error: (err as Error).message });
@@ -330,6 +350,7 @@ export async function agentVoiceRoutes(app: FastifyInstance) {
       req.log.error(err, "agent/voice-turn error");
       send({ type: "error", message: "Error en el servidor" });
     } finally {
+      clearInterval(heartbeat);
       try { pt.end(); } catch { /* already ended */ }
     }
   });

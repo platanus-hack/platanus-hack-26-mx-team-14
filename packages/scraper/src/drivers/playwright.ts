@@ -110,7 +110,7 @@ export class PlaywrightSession implements Session {
     return this.page.url();
   }
   async click(selector: string, opts: ClickOpts = {}): Promise<void> {
-    await this.page.click(selector, { timeout: opts.timeoutMs });
+    await this.page.click(selector, { timeout: opts.timeoutMs, force: opts.force });
   }
   async fill(selector: string, value: string): Promise<void> {
     await this.page.fill(selector, value);
@@ -166,9 +166,9 @@ export class PlaywrightSession implements Session {
   async exists(selector: string): Promise<boolean> {
     return (await this.page.locator(selector).count()) > 0;
   }
-  async screenshot(selector?: string): Promise<Buffer> {
+  async screenshot(selector?: string, opts: { fullPage?: boolean } = {}): Promise<Buffer> {
     if (selector) return this.page.locator(selector).first().screenshot();
-    return this.page.screenshot();
+    return this.page.screenshot({ fullPage: opts.fullPage });
   }
   async captureDownload(trigger: () => Promise<void>, timeoutMs = 90_000): Promise<Download> {
     const log = childLogger({ op: "captureDownload" });
