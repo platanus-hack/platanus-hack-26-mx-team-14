@@ -22,39 +22,43 @@ const folio = (n: number) => {
   return `${h}-2728-46D5-B255-5835C7${String(n).padStart(6, "0")}`;
 };
 
-// ── Facturas EMITIDAS (ingresos) ────────────────────────────────────────────
-// [fecha, rfcReceptor, nombreReceptor, subtotal, estado?]
-type EmitRow = [string, string, string, number, ("Vigente" | "Cancelado")?];
+// ── Facturas EMITIDAS (ingresos facturados) ─────────────────────────────────
+// Cada renglón lleva su FUENTE de ingreso para que la composición por régimen se
+// DERIVE de los datos (no se afirme). RESICO = facturas a clientes; plataforma =
+// CFDIs de apps (DiDi/Uber/Rappi). El asalariado va aparte (es nómina, NOMINA_ANUAL).
+// [fecha, rfcReceptor, nombreReceptor, subtotal, fuente, estado?]
+type Fuente = "resico" | "plataforma";
+type EmitRow = [string, string, string, number, Fuente, ("Vigente" | "Cancelado")?];
 
 const EMITIDAS_ROWS: EmitRow[] = [
-  ["2025-06-12", "ACO050101AB1", "ACME Consultoría SA de CV", 8000],
-  ["2025-07-03", "DIG180920QX3", "Digital House MX SA de CV", 7000],
-  ["2025-07-22", "MPU190312KL9", "Marketing Pulse SA de CV", 5000],
-  ["2025-08-15", "TEC110704RM8", "Tecnológicas Norte SA de CV", 9000],
-  ["2025-09-05", "ACO050101AB1", "ACME Consultoría SA de CV", 8500],
-  ["2025-09-26", "ECL200815H23", "Estudio Creativo Lumen", 6500],
-  ["2025-10-10", "DIG180920QX3", "Digital House MX SA de CV", 11000],
-  ["2025-10-28", "MPU190312KL9", "Marketing Pulse SA de CV", 7000],
-  ["2025-11-14", "TEC110704RM8", "Tecnológicas Norte SA de CV", 8000, "Cancelado"],
-  ["2025-11-30", "ACO050101AB1", "ACME Consultoría SA de CV", 9500],
-  ["2025-12-09", "DIG180920QX3", "Digital House MX SA de CV", 13000],
-  ["2025-12-20", "ECL200815H23", "Estudio Creativo Lumen", 9000],
-  ["2026-01-15", "ACO050101AB1", "ACME Consultoría SA de CV", 11000],
-  ["2026-01-30", "XAXX010101000", "FACTURA GLOBAL", 8000],
-  ["2026-02-11", "DIG180920QX3", "Digital House MX SA de CV", 14000],
-  ["2026-02-25", "MPU190312KL9", "Marketing Pulse SA de CV", 10000],
-  ["2026-03-12", "TEC110704RM8", "Tecnológicas Norte SA de CV", 12000],
-  ["2026-03-27", "ACO050101AB1", "ACME Consultoría SA de CV", 9000],
-  ["2026-04-08", "DIG180920QX3", "Digital House MX SA de CV", 16000],
-  ["2026-04-22", "ECL200815H23", "Estudio Creativo Lumen", 12000],
-  ["2026-05-14", "ACO050101AB1", "ACME Consultoría SA de CV", 15000],
-  ["2026-05-29", "MPU190312KL9", "Marketing Pulse SA de CV", 11000],
-  ["2026-06-10", "DIG180920QX3", "Digital House MX SA de CV", 18000],
-  ["2026-06-18", "TEC110704RM8", "Tecnológicas Norte SA de CV", 13000, "Cancelado"],
+  // RESICO — facturas a clientes (suma $165,000 vigente)
+  ["2025-06-12", "ACO050101AB1", "ACME Consultoría SA de CV", 8000, "resico"],
+  ["2025-07-03", "DIG180920QX3", "Digital House MX SA de CV", 9000, "resico"],
+  ["2025-08-15", "TEC110704RM8", "Tecnológicas Norte SA de CV", 10000, "resico"],
+  ["2025-09-05", "ACO050101AB1", "ACME Consultoría SA de CV", 11000, "resico"],
+  ["2025-10-10", "DIG180920QX3", "Digital House MX SA de CV", 12000, "resico"],
+  ["2025-11-30", "ACO050101AB1", "ACME Consultoría SA de CV", 13000, "resico"],
+  ["2025-12-09", "DIG180920QX3", "Digital House MX SA de CV", 14000, "resico"],
+  ["2026-01-15", "ACO050101AB1", "ACME Consultoría SA de CV", 12000, "resico"],
+  ["2026-02-11", "DIG180920QX3", "Digital House MX SA de CV", 13000, "resico"],
+  ["2026-03-12", "TEC110704RM8", "Tecnológicas Norte SA de CV", 14000, "resico"],
+  ["2026-04-08", "DIG180920QX3", "Digital House MX SA de CV", 15000, "resico"],
+  ["2026-05-14", "ACO050101AB1", "ACME Consultoría SA de CV", 16000, "resico"],
+  ["2026-06-10", "DIG180920QX3", "Digital House MX SA de CV", 18000, "resico"],
+  // Plataformas — CFDIs de apps (suma $45,000 vigente)
+  ["2025-07-20", "DMS180521KL2", "DiDi Mobility México", 7500, "plataforma"],
+  ["2025-09-22", "UBE140317AB5", "Uber México (Plataforma)", 7500, "plataforma"],
+  ["2025-11-18", "RAP190812CD7", "Rappi México (Plataforma)", 7500, "plataforma"],
+  ["2026-01-25", "DMS180521KL2", "DiDi Mobility México", 7500, "plataforma"],
+  ["2026-03-27", "UBE140317AB5", "Uber México (Plataforma)", 7500, "plataforma"],
+  ["2026-05-29", "RAP190812CD7", "Rappi México (Plataforma)", 7500, "plataforma"],
+  // Canceladas (no cuentan para ingreso ni IVA)
+  ["2025-11-14", "TEC110704RM8", "Tecnológicas Norte SA de CV", 8000, "resico", "Cancelado"],
+  ["2026-06-18", "TEC110704RM8", "Tecnológicas Norte SA de CV", 13000, "resico", "Cancelado"],
 ];
 
 export const emitidasFixture: Invoice[] = EMITIDAS_ROWS.map(
-  ([fecha, rfc, nombre, subtotal, estado = "Vigente"], i) => ({
+  ([fecha, rfc, nombre, subtotal, , estado = "Vigente"], i) => ({
     uuid: folio(1000 + i),
     rfcEmisor: DEMO_RFC,
     rfcReceptor: rfc,
@@ -67,6 +71,35 @@ export const emitidasFixture: Invoice[] = EMITIDAS_ROWS.map(
     tipoComprobante: "I",
   }),
 );
+
+// ── Composición de ingreso (DERIVADA, para que el régimen cuadre) ────────────
+/** Sueldo anual asalariado (nómina). No genera facturas emitidas → cifra aparte. */
+export const NOMINA_ANUAL = 90000;
+
+const sumaVigentePorFuente = (fuente: Fuente) =>
+  EMITIDAS_ROWS.filter((r) => r[4] === fuente && (r[5] ?? "Vigente") === "Vigente").reduce(
+    (s, r) => s + r[3],
+    0,
+  );
+
+/** Ingreso anual por fuente — la base de la que se deriva el % por régimen. */
+export const incomeComposition = (() => {
+  const resico = sumaVigentePorFuente("resico");
+  const plataforma = sumaVigentePorFuente("plataforma");
+  const asalariado = NOMINA_ANUAL;
+  const total = resico + plataforma + asalariado;
+  return {
+    resico,
+    plataforma,
+    asalariado,
+    total,
+    pct: {
+      resico: Math.round((resico / total) * 100),
+      asalariado: Math.round((asalariado / total) * 100),
+      plataforma: Math.round((plataforma / total) * 100),
+    },
+  };
+})();
 
 // ── Facturas RECIBIDAS (gastos deducibles) ──────────────────────────────────
 // [fecha, rfcEmisor, nombreEmisor, subtotal]  — nombre permite categorizar gasto
@@ -109,17 +142,17 @@ export const recibidasFixture: Invoice[] = RECIBIDAS_ROWS.map(
 
 // ── CSF ─────────────────────────────────────────────────────────────────────
 // NOTE: el % por régimen NO viene en la Constancia real del SAT — es un insight
-// estimado por SATI (aquí, mock). Al cablear data real hay que derivarlo o
-// dejar `porcentaje` indefinido.
+// de SATI. Aquí se DERIVA de incomeComposition (ingreso por fuente), así siempre
+// cuadra con las facturas + la nómina. Con data real se derivaría igual.
 export const csfFixture: SkillResult & { skill: "generateCSF" } = {
   skill: "generateCSF",
   csf: {
     rfc: DEMO_RFC,
     nombre: "ANDRICK DANIEL RAMOS ORTEGA",
     regimenFiscal: [
-      { nombre: "Régimen Simplificado de Confianza", porcentaje: 55 },
-      { nombre: "Régimen de Sueldos y Salarios e Ingresos Asimilados a Salarios", porcentaje: 30 },
-      { nombre: "Régimen de las Actividades Empresariales a través de Plataformas Tecnológicas", porcentaje: 15 },
+      { nombre: "Régimen Simplificado de Confianza", porcentaje: incomeComposition.pct.resico },
+      { nombre: "Régimen de Sueldos y Salarios e Ingresos Asimilados a Salarios", porcentaje: incomeComposition.pct.asalariado },
+      { nombre: "Régimen de las Actividades Empresariales a través de Plataformas Tecnológicas", porcentaje: incomeComposition.pct.plataforma },
     ],
     domicilioFiscal: {
       codigoPostal: "11800",
