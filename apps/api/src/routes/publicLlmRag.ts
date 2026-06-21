@@ -55,15 +55,18 @@ export async function publicLlmRagRoutes(app: FastifyInstance) {
 
     const sendReply = (text: string) => {
       if (!stream) return reply.send(openAiResponse(text));
-      reply.raw.setHeader("Content-Type", "text/event-stream");
-      reply.raw.setHeader("Cache-Control", "no-cache");
-      reply.raw.setHeader("Connection", "keep-alive");
-      const chunk = JSON.stringify({ choices: [{ delta: { role: "assistant", content: text }, finish_reason: null, index: 0 }] });
-      const done  = JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop", index: 0 }] });
+
+      // Hijack so Fastify doesn't try to send its own response after we close raw
+      reply.hijack();
+      const base = { id: `chatcmpl-${Date.now()}`, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: "sati-rag" };
+      const chunk = JSON.stringify({ ...base, choices: [{ index: 0, delta: { role: "assistant", content: text }, finish_reason: null }] });
+      const done  = JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
+      reply.raw.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" });
       reply.raw.write(`data: ${chunk}\n\n`);
       reply.raw.write(`data: ${done}\n\n`);
       reply.raw.write("data: [DONE]\n\n");
       reply.raw.end();
+      return;
     };
 
     // ── 1. Auth: resolve existing session or find code in messages ────────────
@@ -76,7 +79,7 @@ export async function publicLlmRagRoutes(app: FastifyInstance) {
         .map((m) => extractCode(m.content))
         .find((c) => c !== null) ?? null;
 
-      if (!code) return sendReply("Hola, soy SATI. Por favor dime tus seis dígitos de identificación.");
+      if (!code) return sendReply("Por favor dime tus seis dígitos de identificación.");
 
       const [user] = await db().select().from(users).where(eq(users.identificationCode, code)).limit(1);
       if (!user) return sendReply("Código incorrecto. Por favor verifica tus seis dígitos.");
@@ -188,7 +191,9 @@ async function buildFiscalSummaryWithClaude(
     .join("")
     .trim();
 
-  return text || `Autenticado. Hola ${name}. ¿En qué te puedo ayudar hoy?`;
+  // Prefix ensures alreadyAuthed detection works on subsequent turns
+  const body = text || `Hola ${name}. ¿En qué te puedo ayudar hoy?`;
+  return body.startsWith("Autenticado") ? body : `Autenticado. ${body}`;
 }
 
 /**
