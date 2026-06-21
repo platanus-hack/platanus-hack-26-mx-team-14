@@ -68,8 +68,22 @@ export async function publicLlmAuthRoutes(app: FastifyInstance) {
   }>("/public/voice/llm-auth/chat/completions", async (req, reply) => {
     if (!anthropic) return reply.code(503).send({ error: "ANTHROPIC_API_KEY not set" });
 
-    const { messages = [], call } = req.body;
+    const { messages = [], call, stream = false } = req.body;
     const callId = call?.id ?? null;
+
+    // Handles both streaming (SSE) and non-streaming responses for Vapi compatibility.
+    const sendReply = (text: string) => {
+      if (!stream) return reply.send(openAiResponse(text));
+      reply.raw.setHeader("Content-Type", "text/event-stream");
+      reply.raw.setHeader("Cache-Control", "no-cache");
+      reply.raw.setHeader("Connection", "keep-alive");
+      const chunk = JSON.stringify({ choices: [{ delta: { role: "assistant", content: text }, finish_reason: null, index: 0 }] });
+      const done  = JSON.stringify({ choices: [{ delta: {}, finish_reason: "stop", index: 0 }] });
+      reply.raw.write(`data: ${chunk}\n\n`);
+      reply.raw.write(`data: ${done}\n\n`);
+      reply.raw.write("data: [DONE]\n\n");
+      reply.raw.end();
+    };
 
     // ── 1. Verificar / establecer autenticación ───────────────────────────────
     let caller = callId ? await resolveCaller(callId) : null;
@@ -87,9 +101,7 @@ export async function publicLlmAuthRoutes(app: FastifyInstance) {
         const user = userRows[0];
 
         if (!user) {
-          return reply.send(openAiResponse(
-            "Ese código no coincide con ninguna cuenta. Por favor verifica tu código en la sección de Configuración de la plataforma SATI.",
-          ));
+          return sendReply("Ese código no coincide con ninguna cuenta. Por favor verifica tu código en la sección de Configuración de la plataforma SATI.");
         }
 
         const credRows = await db()
@@ -100,17 +112,13 @@ export async function publicLlmAuthRoutes(app: FastifyInstance) {
         const cred = credRows[0];
 
         if (!cred) {
-          return reply.send(openAiResponse(
-            "Tu cuenta no tiene credenciales del SAT configuradas. Por favor configúralas en la plataforma antes de continuar.",
-          ));
+          return sendReply("Tu cuenta no tiene credenciales del SAT configuradas. Por favor configúralas en la plataforma antes de continuar.");
         }
 
         caller = { userId: user.id, credentialId: cred.id, rfc: cred.rfc };
         if (callId) await setCaller(callId, caller);
 
-        return reply.send(openAiResponse(
-          `Autenticado. Hola ${user.displayName ?? ""}. ¿En qué te puedo ayudar hoy?`,
-        ));
+        return sendReply(`Autenticado. Hola ${user.displayName ?? ""}. ¿En qué te puedo ayudar hoy?`);
       }
 
       // Sin código todavía: pedir autenticación
@@ -126,7 +134,7 @@ export async function publicLlmAuthRoutes(app: FastifyInstance) {
       });
       const block = res.content.find((c) => c.type === "text");
       const text = block && "text" in block ? block.text : "Por favor dime tu código de identificación de 6 dígitos.";
-      return reply.send(openAiResponse(text));
+      return sendReply(text);
     }
 
     // ── 2. Loop de agente — copia exacta de /agent/voice-turn ────────────────
@@ -137,7 +145,7 @@ export async function publicLlmAuthRoutes(app: FastifyInstance) {
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
     if (messages2.length === 0) {
-      return reply.send(openAiResponse("¿En qué te puedo ayudar con tus trámites fiscales?"));
+      return sendReply("¿En qué te puedo ayudar con tus trámites fiscales?");
     }
 
     let lastSkillResult: SkillResult | null = null;
@@ -214,17 +222,21 @@ export async function publicLlmAuthRoutes(app: FastifyInstance) {
       }
 
       req.log.info({ skillResult: lastSkillResult?.skill }, "agent turn done");
-      return reply.send(openAiResponse(finalReply || "No pude procesar tu solicitud."));
+      return sendReply(finalReply || "No pude procesar tu solicitud.");
     } catch (err) {
       req.log.error(err, "publicLlmAuth agent error");
-      return reply.send(openAiResponse("Hubo un problema en el servidor. Por favor intenta de nuevo."));
+      return sendReply("Hubo un problema en el servidor. Por favor intenta de nuevo.");
     }
   });
 }
 
 function openAiResponse(text: string) {
   return {
-    choices: [{ message: { role: "assistant", content: text }, finish_reason: "stop", index: 0 }],
+    id: `chatcmpl-${Date.now()}`,
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model: "sati-llm",
+    choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: "stop" }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   };
 }
