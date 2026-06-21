@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, MessageSquare } from 'lucide-react';
 import type { Panel, PanelSize } from '../lib/dashboard';
 import CsfCard from './CsfCard';
-import InvoiceList from './InvoiceList';
+import InvoiceListCard from './InvoiceListCard';
 import KpiCard from './KpiCard';
 
 /** Panel size → column span on the 12-col grid (stacks full-width on mobile). */
@@ -17,8 +17,18 @@ function PanelContent({ panel }: { panel: Panel }) {
   switch (panel.kind) {
     case 'csf':
       return <CsfCard csf={panel.data} />;
-    case 'invoices':
-      return <InvoiceList invoices={panel.data.invoices} tipo={panel.data.tipo} />;
+    case 'invoices': {
+      // Adapt the canvas panel ({ invoices, tipo }) to InvoiceListCard's
+      // InvoiceResult ({ kind, invoices, from, to }). Derive the date range
+      // from the returned invoices (newest/oldest fechaEmisión).
+      const { invoices, tipo } = panel.data;
+      const days = invoices.map((i) => i.fechaEmision.slice(0, 10)).sort();
+      return (
+        <InvoiceListCard
+          result={{ kind: tipo, invoices, from: days[0] ?? '', to: days[days.length - 1] ?? '' }}
+        />
+      );
+    }
     case 'kpi':
       return <KpiCard title={panel.title} data={panel.data} />;
   }
