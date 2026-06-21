@@ -104,19 +104,19 @@ export default function InvoicePreviewCard({ preview, onConfirm, onCancel }: Inv
           </div>
         </div>
 
-        {/* Download preview PDF */}
-        {preview.pdfBase64 && (
-          <div className="px-5 pt-4">
-            <button
-              type="button"
-              onClick={handleDownload}
-              className="w-full h-10 rounded-full border border-border text-sm text-muted hover:text-ink hover:border-ink/30 transition-colors flex items-center justify-center gap-2"
-            >
-              <Download size={14} aria-hidden="true" />
-              Descargar vista previa (PDF)
-            </button>
-          </div>
-        )}
+        {/* Download preview PDF — always shown; disabled until the PDF is available. */}
+        <div className="px-5 pt-4">
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={!preview.pdfBase64}
+            title={preview.pdfBase64 ? 'Descargar el PDF de la vista previa' : 'El PDF de la vista previa no está disponible'}
+            className="w-full h-10 rounded-full border border-border text-sm text-muted hover:text-ink hover:border-ink/30 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted disabled:hover:border-border"
+          >
+            <Download size={14} aria-hidden="true" />
+            Descargar vista previa (PDF)
+          </button>
+        </div>
 
         {/* Actions */}
         {!confirmed ? (
